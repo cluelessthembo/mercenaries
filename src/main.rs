@@ -7,6 +7,7 @@ use bevy::{
     input::mouse::{MouseButtonInput},
     input::keyboard::{ElementState, KeyboardInput},
 };
+// imports for the easing functions
 use ezing;
 
 // position component
