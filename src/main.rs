@@ -7,6 +7,7 @@ use bevy::{
     input::mouse::{MouseButtonInput},
     input::keyboard::{ElementState, KeyboardInput},
 };
+use ezing;
 
 // position component
 // spawn this component along with any entity that has a physical position on the screen
@@ -143,7 +144,7 @@ impl Plugin for DrawMovingPlugin {
 // this function goes through all entities with text, style, and position components
 // and updates the style component to reflect the correct position of the entity
 // note that this only happens when any of those position components are changed
-fn draw_text_system(mut query: Query<(&Text, &mut Style, Changed<Position>)>){
+fn draw_text_system(mut query: Query<(&Text, &mut Style, &Position)>){
     // the query comes up empty if no position components are changed
     for (_text, mut style, pos) in &mut query.iter() {
         // update the style component to have the correct position on the screen
@@ -159,7 +160,18 @@ pub struct PersonPlugin;
 struct Person;
 // controlled component
 // spawn this component along with any entity that should be considered controlled by the player
-struct Controlled;
+#[derive(Default)]
+struct Controlled{
+    move_to: (f32, f32),
+}
+
+impl Controlled {
+    fn new(x: f32, y: f32) -> Self {
+        Controlled {
+            move_to: (x, y),
+        }
+    }
+}
 // label struct
 // this struct is a convenient way of generating the necessary text components to label an entity
 struct Label(TextComponents);
@@ -226,7 +238,7 @@ fn add_people(mut commands: Commands, asset_server: Res<AssetServer>) {
         // spawn velocity component along with so that this entity has a physical velocity and can move
         .with(Velocity(0.0, 0.0))
         // spawn controlled component along with so that this entity is directly controlled by the player
-        .with(Controlled)
+        .with(Controlled::new(100.0, 100.0))
         // same deal for the other three persons
         // note however that only the first has the controlled component
         // we will consider that entity our player character
@@ -312,15 +324,16 @@ impl Plugin for ControlPlugin {
         // add in the mouse input system
         .add_system(mouse_input_system.system())
         // add in the keyboard input system
-        .add_system(keyboard_input_system.system());
+        .add_system(keyboard_input_system.system())
+        .add_system(move_player_system.system())
+        .add_system(control_player_system.system());
     }
 }
 // the inputstate struct is what we will read in the rest
 // of the program to determine if a player is pressing a certain input or not
 #[derive(Default, Debug)]
 struct InputState{
-    // mouse_position holds the location of the cursor, with the 
-    // lower-left corner as (0.0, 0.0)
+    // mouse_position holds the location of the cursor
     mouse_position: (f32, f32),
     // mouse_just_presses holds which mouse buttons were JUST pressed
     mouse_just_presses: Vec<MouseButton>,
@@ -340,7 +353,7 @@ struct MouseState {
 // this function reads the input coming from the mouse and stores it in InputState for use in other parts
 // of the program
 fn mouse_input_system(mut inputs: ResMut<InputState>, 
-    mut state: ResMut<MouseState>, 
+    mut state: ResMut<MouseState>, window: Res<WindowDescriptor>,
     mouse_button_input_events: Res<Events<MouseButtonInput>>, 
     cursor_moved_events: Res<Events<CursorMoved>>) {
     
@@ -372,10 +385,9 @@ fn mouse_input_system(mut inputs: ResMut<InputState>,
     .iter(&cursor_moved_events) {
         // this is where we set the mouse position from the cursor position
         inputs.mouse_position.0 = event.position[0];
-        // TODO convert the cursormoved event coordinates to mouse position coordinates we can use 
-        inputs.mouse_position.1 = event.position[1];
+        // convert the cursormoved event coordinates to mouse position coordinates we can use 
+        inputs.mouse_position.1 = window.height as f32 - event.position[1];
     }
-
 }
 // keyboardstate holds an event reader for key presses from the keyboard
 #[derive(Default)]
@@ -409,5 +421,34 @@ fn keyboard_input_system(mut inputs: ResMut<InputState>, mut state: ResMut<Keybo
                 }
             }
         }
+    }
+}
+
+fn move_player_system(mut query: Query<(&Controlled, &mut Velocity, &Position)>) {
+    for (state, mut vel, pos) in &mut query.iter() {
+        let dist_vector = Vec2::new(state.move_to.0 - pos.0, state.move_to.1 - pos.1);
+        let dist = dist_vector.length();
+        let mut new_vel = Vec2::new(0.0, 0.0);
+        if dist > 0.0 {
+            let ease_input = (dist / (2.75 * 50.0)).min(1.0);
+
+            new_vel = ezing::expo_out( ease_input ) * (2.75 * 50.0) * dist_vector.normalize();
+        }
+        if new_vel[0].abs() < 1.0 {
+            new_vel[0] = 0.0;            
+        }
+        if new_vel[1].abs() < 1.0 {
+            new_vel[1] = 0.0;
+        }
+        vel.0 = new_vel[0];
+        vel.1 = new_vel[1];
+    }
+}
+
+fn control_player_system(inputs: Res<InputState>, mut query: Query<&mut Controlled>) {
+    if inputs.mouse_presses.contains(&MouseButton::Left) {
+        for mut state in &mut query.iter() {
+            state.move_to = inputs.mouse_position.clone();
+        }        
     }
 }

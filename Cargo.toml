@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 bevy = "0.1.2"
+ezing = "0.2.1"
