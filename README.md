@@ -1,1 +1,1 @@
-# mercenaries
+# Mercenaries
