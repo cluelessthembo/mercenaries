@@ -125,37 +125,54 @@ fn move_system(time: Res<Time>, mut query: Query<(&mut Position, &Velocity)>){
         pos.1 += vel.1 * time.delta_seconds;
     }
 }
-
+// draw moving plugin
+// this plugin updates everything drawable to their correct positions
+// drawing itself happens within the bevy engine
 pub struct DrawMovingPlugin;
 
+// implementation of the plugin trait,
+// required for this to be used as a plugin
 impl Plugin for DrawMovingPlugin {
     fn build(&self, app: &mut AppBuilder){
+        // add in the draw text system
         app.add_system(draw_text_system.system());
     }
 }
 
+// draw text system
+// this function goes through all entities with text, style, and position components
+// and updates the style component to reflect the correct position of the entity
+// note that this only happens when any of those position components are changed
 fn draw_text_system(mut query: Query<(&Text, &mut Style, Changed<Position>)>){
-    //println!("draw_text");
+    // the query comes up empty if no position components are changed
     for (_text, mut style, pos) in &mut query.iter() {
-        //println!("updating");
+        // update the style component to have the correct position on the screen
         style.position.left = Val::Px(pos.0);
         style.position.top = Val::Px(pos.1);
     }
 }
-
+// person plugin
+// adds in all the people
 pub struct PersonPlugin;
-
+// person component
+// spawn this component along with any entity that should be considered a person
 struct Person;
-
+// controlled component
+// spawn this component along with any entity that should be considered controlled by the player
 struct Controlled;
-
+// label struct
+// this struct is a convenient way of generating the necessary text components to label an entity
 struct Label(TextComponents);
 
+//implementation for the label struct
 impl Label {
+    // to generate a label, do Label::new(<name>, <font>, <color>, <font size>).0
+    // the '.0' accesses the inner TextComponents, which is what you really need
     fn new(name: String, font: Handle<Font>, color: Color, font_size: f32) -> Self {
         Label(
             TextComponents {
                 text: Text {
+                    // note that the font should be a handle to a font asset loaded in by the asset server
                     font: font,
                     value: name,
                     style: TextStyle {
@@ -166,7 +183,8 @@ impl Label {
                 style: Style {
                     position_type: PositionType::Absolute,
                     position: Rect {
-                        // hide text initially
+                        // hide text initially by sending it way out of bounds until
+                        // its position is updated
                         top: Val::Px(-1000.0),
                         left: Val::Px(-1000.0),
                         ..Default::default()
@@ -179,53 +197,68 @@ impl Label {
     }
 }
 
+// implementation of the plugin trait,
+// required for this to be used as a plugin
 impl Plugin for PersonPlugin {
     fn build(&self, app: &mut AppBuilder) {
+        // add in the add people startup system 
         app
         .add_startup_system(add_people.system());
     }
 }
 
+// add people startup system
+// this function runs once at the initialization of the plugin to add in six people
 fn add_people(mut commands: Commands, asset_server: Res<AssetServer>) {
 
+    // this is a handle to a font asset, loaded in by the asset server from the local directory
     let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
 
     commands
+        // spawn in text components for use as label
         .spawn(
             Label::new("P0".to_string(), font_handle.clone(), Color::WHITE, 12.0).0,
         )
+        // spawn person component along with to signify that this entity is a person
         .with(Person)
+        // spawn position component along with so that this entity has a physical position
         .with(Position(100.0, 100.0))
+        // spawn velocity component along with so that this entity has a physical velocity and can move
         .with(Velocity(0.0, 0.0))
+        // spawn controlled component along with so that this entity is directly controlled by the player
         .with(Controlled)
+        // same deal for the other three persons
+        // note however that only the first has the controlled component
+        // we will consider that entity our player character
         .spawn(
             Label::new("P1".to_string(), font_handle.clone(), Color::WHITE, 12.0).0,
         )
         .with(Person)
         .with(Position(800.0, 500.0))
         .with(Velocity(0.0, 0.0))
-        .with(Controlled)
         .spawn(
             Label::new("P3".to_string(), font_handle.clone(), Color::WHITE, 12.0).0,
         )
         .with(Person)
         .with(Position(600.0, 100.0))
         .with(Velocity(0.0, 0.0))
-        .with(Controlled)
         .spawn(
             Label::new("P4".to_string(), font_handle.clone(), Color::WHITE, 12.0).0,
         )
         .with(Person)
         .with(Position(1000.0, 300.0))
         .with(Velocity(0.0, 0.0))
-        .with(Controlled)
         ;
 }
-
+// encounter plugin
+// responsible for generating encounters for the player
 pub struct EncounterPlugin;
-
+// hostile component
+// spawn this component along side any entity that is hostile to the player
 struct Hostile;
 
+// implementation of the plugin trait,
+// required for this to be used as a plugin
 impl Plugin for EncounterPlugin {
     fn build(&self, app: &mut AppBuilder) {
         app.add_startup_system(add_hostiles.system());
