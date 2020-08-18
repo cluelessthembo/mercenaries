@@ -266,17 +266,26 @@ impl Plugin for EncounterPlugin {
     }
 }
 
+// add hostiles start up system
+// this function adds in some hostiles
 fn add_hostiles(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // this is a font handle, a handle to a font asset loaded in by the asset server from the local directory
     let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
 
     commands
+        // spawn in text components for the label
         .spawn(
             Label::new("H0".to_string(), font_handle.clone(), Color::RED, 12.0).0,
         )
+        // spawn along the person component to signify that this entity is a person
         .with(Person)
+        // spawn along the position component so that this entity has a physical position on the screen
         .with(Position(200.0, 400.0))
+        // spawn along the velocity component so that this entity has a physical velocity and can move
         .with(Velocity(0.0, 0.0))
+        // spawn along the hostile component so that this entity is considered hostile to the player
         .with(Hostile)
+        // repeat for another hostile entity
         .spawn(
             Label::new("H1".to_string(), font_handle.clone(), Color::RED, 12.0).0,
         )
@@ -286,81 +295,119 @@ fn add_hostiles(mut commands: Commands, asset_server: Res<AssetServer>) {
         .with(Hostile)
         ;
 }
-
+// control plugin
+// responsible for reading player inputs from the mouse and keyboard
 pub struct ControlPlugin;
 
+// implementation of the plugin trait,
+// required for this to be used as a plugin
 impl Plugin for ControlPlugin {
     fn build(&self, app: &mut AppBuilder){
+        // initialise the inputstate resource
         app.init_resource::<InputState>()
+        // initialise the mousestate resource
         .init_resource::<MouseState>()
+        // initialise the keyboardstate resource
         .init_resource::<KeyboardState>()
+        // add in the mouse input system
         .add_system(mouse_input_system.system())
+        // add in the keyboard input system
         .add_system(keyboard_input_system.system());
     }
 }
-
+// the inputstate struct is what we will read in the rest
+// of the program to determine if a player is pressing a certain input or not
 #[derive(Default, Debug)]
 struct InputState{
+    // mouse_position holds the location of the cursor, with the 
+    // lower-left corner as (0.0, 0.0)
     mouse_position: (f32, f32),
+    // mouse_just_presses holds which mouse buttons were JUST pressed
     mouse_just_presses: Vec<MouseButton>,
+    // mouse_presses holds which mouse buttons are currently pressed
     mouse_presses: Vec<MouseButton>,
+    // key_presses holds which keys are currently pressed
     key_presses: Vec<KeyCode>,
 }
+// the mousestate struct holds event readers for the mousebutton events and cursormoved events
 #[derive(Default)]
 struct MouseState {
     mouse_button_event_reader: EventReader<MouseButtonInput>,
     cursor_moved_event_reader: EventReader<CursorMoved>,
 }
 
+// mouse input system
+// this function reads the input coming from the mouse and stores it in InputState for use in other parts
+// of the program
 fn mouse_input_system(mut inputs: ResMut<InputState>, 
     mut state: ResMut<MouseState>, 
     mouse_button_input_events: Res<Events<MouseButtonInput>>, 
     cursor_moved_events: Res<Events<CursorMoved>>) {
     
+    // clear the mouse_just_presses vector so that we only capture the most recent button inputs
     inputs.mouse_just_presses.clear();
 
     for event in state
     .mouse_button_event_reader
     .iter(&mouse_button_input_events)   {
+        // if a mouse button is pressed
         if event.state == ElementState::Pressed {
+            // add this to the mouse_presses and mouse_just_presses vectors
+            // no need to check if they're already present because mouse buttons must be released before they can be pressed again
             inputs.mouse_presses.push(event.button);
             inputs.mouse_just_presses.push(event.button);
+
+        // if a mouse button is released 
         } else if event.state == ElementState::Released {
+            // remove it from the mouse_presses vector
             if let Some(index) = inputs.mouse_presses.iter().position(|x| *x == event.button) {
                 inputs.mouse_presses.remove(index);
             }
         }
     }
 
+    // reads CursorMoved events to get the position of the cursor relative to the window
     for event in state
     .cursor_moved_event_reader
     .iter(&cursor_moved_events) {
+        // this is where we set the mouse position from the cursor position
         inputs.mouse_position.0 = event.position[0];
+        // TODO convert the cursormoved event coordinates to mouse position coordinates we can use 
         inputs.mouse_position.1 = event.position[1];
     }
 
 }
-
+// keyboardstate holds an event reader for key presses from the keyboard
 #[derive(Default)]
 struct KeyboardState {
     event_reader: EventReader<KeyboardInput>,
 }
 
+// keyboard input system
+// this system captures input from the keyboard and stores it in inputstate
 fn keyboard_input_system(mut inputs: ResMut<InputState>, mut state: ResMut<KeyboardState>, keyboard_input_events: Res<Events<KeyboardInput>>) {
     for event in state.event_reader.iter(&keyboard_input_events) {
+        // if a key is pressed
         if event.state == ElementState::Pressed {
+            // check if its keycode exists
             if let Some(key) = event.key_code {
+                // check if it's not already in the key_presses vector
+                // note that holding down a key will send multiple keypressed events in succession
                 if inputs.key_presses.iter().position(|x| *x == key) == None {
+                    // add it into the key_presses vector
                     inputs.key_presses.push(key)
                 }
             }
+        // if a key is released
         }else if event.state == ElementState::Released {
+            // check if its keycode exists
             if let Some(key) = event.key_code {
+                // check if it's in the key_presses vector
                 if let Some(index) = inputs.key_presses.iter().position(|x| *x == key) {
+                    // reomve it from the key_presses vector
                     inputs.key_presses.remove(index);
                 }
             }
         }
     }
-    println!("{:?}", inputs.key_presses);
 }
