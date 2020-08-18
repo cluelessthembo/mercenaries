@@ -9,3 +9,6 @@ edition = "2018"
 [dependencies]
 bevy = "0.1.2"
 ezing = "0.2.1"
+
+[profile.dev.package.bevy]
+opt-level = 1

@@ -325,7 +325,9 @@ impl Plugin for ControlPlugin {
         .add_system(mouse_input_system.system())
         // add in the keyboard input system
         .add_system(keyboard_input_system.system())
+        // add in the move player system
         .add_system(move_player_system.system())
+        // add in the control player system
         .add_system(control_player_system.system());
     }
 }
@@ -424,29 +426,52 @@ fn keyboard_input_system(mut inputs: ResMut<InputState>, mut state: ResMut<Keybo
     }
 }
 
+// move player system
+// responsible for calculating the velocity vector of the player to get to
+// the desired move point and setting the player character's velocity
 fn move_player_system(mut query: Query<(&Controlled, &mut Velocity, &Position)>) {
     for (state, mut vel, pos) in &mut query.iter() {
+        // get the distance vector from the player to the move point
         let dist_vector = Vec2::new(state.move_to.0 - pos.0, state.move_to.1 - pos.1);
+        // the length of the distance vector is the distance between the two points
         let dist = dist_vector.length();
+        // if distance is 0 then the velocity vector is 0
         let mut new_vel = Vec2::new(0.0, 0.0);
+        // otherwise if distance is greater than 0
         if dist > 0.0 {
+            // divide the distance by the distance factor and cap at 1.0
             let ease_input = (dist / (2.75 * 50.0)).min(1.0);
 
+            // new velocity vector is a rescaled exponential applied to the normalized distance vector
+            // the result is that speed is based on distance and varies according to an exponential curve
+            // and the velocity is always towards the move point
+            // if pathfinding is implemented for the player, then this will need to be changed
             new_vel = ezing::expo_out( ease_input ) * (2.75 * 50.0) * dist_vector.normalize();
         }
+        // if the new x-velocity has insignificant magnitude,
+        // reduce it to 0
+        // this is to avoid sliding
         if new_vel[0].abs() < 1.0 {
             new_vel[0] = 0.0;            
         }
+        // if the new y-velocity has insignificant magnitude,
+        // reduce it to 0
+        // this is to avoid sliding
         if new_vel[1].abs() < 1.0 {
             new_vel[1] = 0.0;
         }
+        // set the velocity vector to use the new velocity vector
         vel.0 = new_vel[0];
         vel.1 = new_vel[1];
     }
 }
 
+// control player system
+// responsible for translating all inputs into the respective actions in-game
 fn control_player_system(inputs: Res<InputState>, mut query: Query<&mut Controlled>) {
+    // if the left mouse button is pressed
     if inputs.mouse_presses.contains(&MouseButton::Left) {
+        // update the move point for the player to the mouse position
         for mut state in &mut query.iter() {
             state.move_to = inputs.mouse_position.clone();
         }        
