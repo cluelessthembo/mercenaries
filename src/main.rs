@@ -261,6 +261,7 @@ struct Hostile;
 // required for this to be used as a plugin
 impl Plugin for EncounterPlugin {
     fn build(&self, app: &mut AppBuilder) {
+        // add in add hostiles start up system
         app.add_startup_system(add_hostiles.system());
     }
 }
