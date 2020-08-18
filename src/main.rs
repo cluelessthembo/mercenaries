@@ -1,17 +1,26 @@
+// imports from bevy engine
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
     render::pass::ClearColor,
     window::CursorMoved,
-    input::mouse::{MouseButtonInput, MouseMotion},
+    input::mouse::{MouseButtonInput},
     input::keyboard::{ElementState, KeyboardInput},
 };
 
+// position component
+// spawn this component along with any entity that has a physical position on the screen
 struct Position(f32, f32);
+
+// velocity component
+// spawn this component along with any entity that has a physical velocity
 struct Velocity(f32, f32);
 
+// main function, this is what cargo run runs
 fn main() {
     App::build()
+    // details about the window, 
+    // including the title, and the dimensions
     .add_resource(WindowDescriptor {
         title: "Mercenaries v0.0.0".to_string(),
         width: 1600,
@@ -19,21 +28,37 @@ fn main() {
         vsync: true,
         ..Default::default()
     })
+    // resource used to determine background colour of window
     .add_resource(ClearColor(Color::rgb(0.2, 0.2, 0.8)))
+    // adds useful plugins for making a game
     .add_default_plugins()
+    // add in the fps diagnostics plugin
     .add_plugin(FrameTimeDiagnosticsPlugin::default())
+    // perform initial setup
     .add_startup_system(setup.system())
+    // add in the fps counter system
     .add_system(fps_monitor_system.system())
+    // add in the person plugin
     .add_plugin(PersonPlugin)
+    // add in the encounter plugin
     .add_plugin(EncounterPlugin)
+    // add in the draw plugin for moving objects
     .add_plugin(DrawMovingPlugin)
+    // add in the moving plugin
     .add_plugin(MovingPlugin)
+    // add in the player control plugin
     .add_plugin(ControlPlugin)
+    // run the app
     .run();
 }
 
+// fps counter component
+// spawn this component along any text components that will be used as fps counters 
 pub struct FPSMeter;
 
+// initial setup function, 
+// spawn in necessary entities (cameras)
+// along with fps counter
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>){
     let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
 
@@ -41,15 +66,19 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>){
         // cameras
         .spawn(Camera2dComponents::default())
         .spawn(UiCameraComponents::default())
-        // texture
+        // text for fps counter
         .spawn(TextComponents {
             style: Style {
+                // for alignment of the text
                 align_self: AlignSelf::FlexEnd,
                 ..Default::default()
             },
             text: Text {
+                // the content of the text
                 value: "FPS:".to_string(),
+                // the font used to display it
                 font: font_handle,
+                // styling for the text, including font size and color
                 style: TextStyle {
                     font_size: 20.0,
                     color: Color::BLACK,
@@ -57,9 +86,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>){
             },
             ..Default::default()
         })
+        // make sure to spawn fps meter component so it displays fps
         .with(FPSMeter);
 }
 
+// fps counter system
 fn fps_monitor_system(diagnostics: Res<Diagnostics>, mut query: Query<(&FPSMeter, &mut Text)>){
     for (_fpsmeter, mut text) in &mut query.iter() {
         if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
@@ -69,17 +100,27 @@ fn fps_monitor_system(diagnostics: Res<Diagnostics>, mut query: Query<(&FPSMeter
         }
     }
 }
-
+// moving plugin 
+// this plugin is in charge of moving everything with both a position component
+// and a velocity component
 pub struct MovingPlugin;
 
+// implementation of the plugin trait,
+// required for this to be used as a plugin
 impl Plugin for MovingPlugin {
     fn build(&self, app: &mut AppBuilder){
+        // add in the move system
         app.add_system(move_system.system());
     }
 }
 
+// move system
+// this function goes through all entities with both position and velocity components
+// and moves them
 fn move_system(time: Res<Time>, mut query: Query<(&mut Position, &Velocity)>){
     for (mut pos, vel) in &mut query.iter() {
+        // adjust the amount moved by the time passed since last tick - this keeps
+        // movement consistent despite inconsistent fps
         pos.0 += vel.0 * time.delta_seconds;
         pos.1 += vel.1 * time.delta_seconds;
     }
