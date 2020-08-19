@@ -137,7 +137,8 @@ pub struct DrawMovingPlugin;
 impl Plugin for DrawMovingPlugin {
     fn build(&self, app: &mut AppBuilder){
         // add in the draw text system
-        app.add_system(draw_text_system.system());
+        app.add_system(draw_text_system.system())
+            .add_system(draw_sprite_system.system());
     }
 }
 
@@ -146,11 +147,29 @@ impl Plugin for DrawMovingPlugin {
 // and updates the style component to reflect the correct position of the entity
 // note that this only happens when any of those position components are changed
 fn draw_text_system(mut query: Query<(&Text, &mut Style, &Position)>){
-    // the query comes up empty if no position components are changed
     for (_text, mut style, pos) in &mut query.iter() {
         // update the style component to have the correct position on the screen
         style.position.left = Val::Px(pos.0);
         style.position.top = Val::Px(pos.1);
+    }
+}
+
+fn get_translate_from_position(x: f32, y: f32) -> (f32, f32) {
+    // translation has (0, 0) at the center of the screen
+    // it also has the y-coordinates increase from bottom to top
+    // we must invert the y-coordinates to use the right scale, then
+    // we must shift the position coordinates towards the 
+    // upper left corner of the screen by half the 
+    // screen dimensions
+    (x - 1600.0 / 2.0, (900.0 - y) - 900.0 / 2.0)
+}
+
+fn draw_sprite_system(mut query: Query<(&Sprite, &mut Translation, &Position)>){
+    for (_sprite, mut transl, pos) in &mut query.iter() {
+        
+        let adj_pos = get_translate_from_position(pos.0, pos.1);
+
+        transl.0 = Vec3::new(adj_pos.0, adj_pos.1, 0.0);
     }
 }
 // person plugin
@@ -162,51 +181,67 @@ struct Person;
 // controlled component
 // spawn this component along with any entity that should be considered controlled by the player
 #[derive(Default)]
-struct Controlled{
+struct Controlled {
     move_to: (f32, f32),
+    squad_pos: i32,
 }
 
 impl Controlled {
-    fn new(x: f32, y: f32) -> Self {
+    fn new(x: f32, y: f32, i: i32) -> Self {
         Controlled {
             move_to: (x, y),
+            squad_pos: i,
         }
     }
 }
+
 // label struct
 // this struct is a convenient way of generating the necessary text components to label an entity
-struct Label(TextComponents);
+struct Label;
 
 //implementation for the label struct
 impl Label {
     // to generate a label, do Label::new(<name>, <font>, <color>, <font size>).0
     // the '.0' accesses the inner TextComponents, which is what you really need
-    fn new(name: String, font: Handle<Font>, color: Color, font_size: f32) -> Self {
-        Label(
-            TextComponents {
-                text: Text {
-                    // note that the font should be a handle to a font asset loaded in by the asset server
-                    font: font,
-                    value: name,
-                    style: TextStyle {
-                        color: color,
-                        font_size: font_size,
-                    },
+    fn new(name: String, font: Handle<Font>, color: Color, font_size: f32) -> TextComponents {
+        TextComponents {
+            text: Text {
+                // note that the font should be a handle to a font asset loaded in by the asset server
+                font: font,
+                value: name,
+                style: TextStyle {
+                    color: color,
+                    font_size: font_size,
                 },
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    position: Rect {
-                        // hide text initially by sending it way out of bounds until
-                        // its position is updated
-                        top: Val::Px(-1000.0),
-                        left: Val::Px(-1000.0),
-                        ..Default::default()
-                    },
+            },
+            style: Style {
+                position_type: PositionType::Absolute,
+                position: Rect {
+                    // hide text initially by sending it way out of bounds until
+                    // its position is updated
+                    top: Val::Px(-1000.0),
+                    left: Val::Px(-1000.0),
                     ..Default::default()
                 },
                 ..Default::default()
-            }
-        )
+            },
+            ..Default::default()
+        }
+    }
+}
+
+struct SimpleRect;
+
+impl SimpleRect {
+    fn new(color_handle: Handle<ColorMaterial>, size: Vec2) -> SpriteComponents {
+        SpriteComponents {
+            material: color_handle,
+            translation: Translation(Vec3::new(-1000.0, -1000.0, 0.0)),
+            sprite: Sprite {
+                size: size,
+            },
+            ..Default::default()
+        }
     }
 }
 
@@ -222,15 +257,19 @@ impl Plugin for PersonPlugin {
 
 // add people startup system
 // this function runs once at the initialization of the plugin to add in six people
-fn add_people(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>, asset_server: Res<AssetServer>) {
 
     // this is a handle to a font asset, loaded in by the asset server from the local directory
-    let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
+    //let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
+
+    let green_handle = materials.add(Color::GREEN.into());
+    let blue_handle = materials.add(Color::BLUE.into());
 
     commands
         // spawn in text components for use as label
         .spawn(
-            Label::new("P0".to_string(), font_handle.clone(), Color::WHITE, 12.0).0,
+            //Label::new("P0".to_string(), font_handle.clone(), Color::WHITE, 12.0),
+            SimpleRect::new(green_handle, Vec2::new(10.0, 10.0))
         )
         // spawn person component along with to signify that this entity is a person
         .with(Person)
@@ -239,28 +278,34 @@ fn add_people(mut commands: Commands, asset_server: Res<AssetServer>) {
         // spawn velocity component along with so that this entity has a physical velocity and can move
         .with(Velocity(0.0, 0.0))
         // spawn controlled component along with so that this entity is directly controlled by the player
-        .with(Controlled::new(100.0, 100.0))
+        .with(Controlled::new(100.0, 100.0, 0))
         // same deal for the other three persons
         // note however that only the first has the controlled component
         // we will consider that entity our player character
         .spawn(
-            Label::new("P1".to_string(), font_handle.clone(), Color::WHITE, 12.0).0,
+            //Label::new("P1".to_string(), font_handle.clone(), Color::WHITE, 12.0),
+            SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
         )
         .with(Person)
         .with(Position(800.0, 500.0))
         .with(Velocity(0.0, 0.0))
+        .with(Controlled::new(100.0, 100.0, 1))
         .spawn(
-            Label::new("P3".to_string(), font_handle.clone(), Color::WHITE, 12.0).0,
+            //Label::new("P3".to_string(), font_handle.clone(), Color::WHITE, 12.0),
+            SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
         )
         .with(Person)
         .with(Position(600.0, 100.0))
         .with(Velocity(0.0, 0.0))
+        .with(Controlled::new(100.0, 100.0, 2))
         .spawn(
-            Label::new("P4".to_string(), font_handle.clone(), Color::WHITE, 12.0).0,
+            //Label::new("P4".to_string(), font_handle.clone(), Color::WHITE, 12.0),
+            SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
         )
         .with(Person)
         .with(Position(1000.0, 300.0))
         .with(Velocity(0.0, 0.0))
+        .with(Controlled::new(100.0, 100.0, 3))
         ;
 }
 // encounter plugin
@@ -281,14 +326,17 @@ impl Plugin for EncounterPlugin {
 
 // add hostiles start up system
 // this function adds in some hostiles
-fn add_hostiles(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>, asset_server: Res<AssetServer>) {
     // this is a font handle, a handle to a font asset loaded in by the asset server from the local directory
-    let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
+    //let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
 
+    let red_handle = materials.add(Color::RED.into());
+    
     commands
         // spawn in text components for the label
         .spawn(
-            Label::new("H0".to_string(), font_handle.clone(), Color::RED, 12.0).0,
+            //Label::new("H0".to_string(), font_handle.clone(), Color::RED, 12.0),
+            SimpleRect::new(red_handle, Vec2::new(10.0, 10.0)),
         )
         // spawn along the person component to signify that this entity is a person
         .with(Person)
@@ -300,7 +348,7 @@ fn add_hostiles(mut commands: Commands, asset_server: Res<AssetServer>) {
         .with(Hostile)
         // repeat for another hostile entity
         .spawn(
-            Label::new("H1".to_string(), font_handle.clone(), Color::RED, 12.0).0,
+            SimpleRect::new(red_handle, Vec2::new(10.0, 10.0)),
         )
         .with(Person)
         .with(Position(400.0, 200.0))
@@ -467,14 +515,46 @@ fn move_player_system(mut query: Query<(&Controlled, &mut Velocity, &Position)>)
     }
 }
 
-// control player system
+fn convert_keycode_to_squad_pos(key: KeyCode) -> i32 {
+    match key {
+        KeyCode::Key0 => 0,
+        KeyCode::Key1 => 1,
+        KeyCode::Key2 => 2,
+        KeyCode::Key3 => 3,
+        KeyCode::Key4 => 4,
+        KeyCode::Key5 => 5,
+        KeyCode::Key6 => 6,
+        KeyCode::Key7 => 7,
+        KeyCode::Key8 => 8,
+        KeyCode::Key9 => 9,
+        _ => -1
+    }
+}
+
+// player control system
 // responsible for translating all inputs into the respective actions in-game
-fn control_player_system(inputs: Res<InputState>, mut query: Query<&mut Controlled>) {
+fn control_player_system(inputs: Res<InputState>, mut controlstate: Query<&mut Controlled>, mut hostiles: Query<(&Hostile, &Position)>) {
     // if the left mouse button is pressed
     if inputs.mouse_presses.contains(&MouseButton::Left) {
-        // update the move point for the player to the mouse position
-        for mut state in &mut query.iter() {
-            state.move_to = inputs.mouse_position.clone();
-        }        
+
+        let mut squad_control = Vec::new();
+        
+        for key in &mut inputs.key_presses.iter() {
+            let squad_pos = convert_keycode_to_squad_pos(*key);
+            if squad_pos >= 0 {
+                squad_control.push(squad_pos);
+            }
+        }
+
+        if squad_control.is_empty() {
+            // if no squad keys are pressed, assume controls are for player
+            squad_control.push(0);
+        }
+
+        for mut state in &mut controlstate.iter() {
+            if squad_control.contains(&state.squad_pos) {
+                state.move_to = inputs.mouse_position.clone();
+            }
+        }
     }
 }
