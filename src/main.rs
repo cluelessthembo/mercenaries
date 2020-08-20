@@ -9,10 +9,28 @@ use bevy::{
 };
 // imports for the easing functions
 use ezing;
+// imports for id generation
+use uuid::Uuid;
 
+struct Id(String);
+
+impl Id {
+    fn new() -> Self {
+        Id(
+            Uuid::new_v4().to_simple().to_string()
+        )
+    }
+    fn id(&self) -> String {
+        self.0.clone()
+    }
+}
 // position component
 // spawn this component along with any entity that has a physical position on the screen
 struct Position(f32, f32);
+
+// size component
+// spawn this component along with any entity that should have collision turned on
+struct Size(f32, f32);
 
 // velocity component
 // spawn this component along with any entity that has a physical velocity
@@ -182,19 +200,27 @@ struct Person;
 // spawn this component along with any entity that should be considered controlled by the player
 #[derive(Default)]
 struct Controlled {
-    move_to: (f32, f32),
+    current_command: Command,
     squad_pos: i32,
+    command_queue: Vec<Command>,
 }
 
 impl Controlled {
-    fn new(x: f32, y: f32, i: i32) -> Self {
+    fn new(i: i32) -> Self {
         Controlled {
-            move_to: (x, y),
+            current_command: Command::default(),
             squad_pos: i,
+            command_queue: Vec::new(),
         }
     }
 }
 
+#[derive(Default)]
+struct Command {
+    command_type: CommandType,
+    target: String,
+    move_to: (f32, f32),
+}
 // label struct
 // this struct is a convenient way of generating the necessary text components to label an entity
 struct Label;
@@ -271,14 +297,16 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
             //Label::new("P0".to_string(), font_handle.clone(), Color::WHITE, 12.0),
             SimpleRect::new(green_handle, Vec2::new(10.0, 10.0))
         )
+        .with(Id::new())
         // spawn person component along with to signify that this entity is a person
         .with(Person)
         // spawn position component along with so that this entity has a physical position
         .with(Position(100.0, 100.0))
         // spawn velocity component along with so that this entity has a physical velocity and can move
         .with(Velocity(0.0, 0.0))
-        // spawn controlled component along with so that this entity is directly controlled by the player
-        .with(Controlled::new(100.0, 100.0, 0))
+        // spawn controlled component along with so that this entity is controlled by the player
+        .with(Controlled::new(0))
+        .with(Size(5.0, 5.0))
         // same deal for the other three persons
         // note however that only the first has the controlled component
         // we will consider that entity our player character
@@ -286,26 +314,32 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
             //Label::new("P1".to_string(), font_handle.clone(), Color::WHITE, 12.0),
             SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
         )
+        .with(Id::new())
         .with(Person)
         .with(Position(800.0, 500.0))
         .with(Velocity(0.0, 0.0))
-        .with(Controlled::new(800.0, 500.0, 1))
+        .with(Controlled::new(1))
+        .with(Size(5.0, 5.0))
         .spawn(
             //Label::new("P3".to_string(), font_handle.clone(), Color::WHITE, 12.0),
             SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
         )
+        .with(Id::new())
         .with(Person)
         .with(Position(600.0, 100.0))
         .with(Velocity(0.0, 0.0))
-        .with(Controlled::new(600.0, 100.0, 2))
+        .with(Controlled::new(2))
+        .with(Size(5.0, 5.0))
         .spawn(
             //Label::new("P4".to_string(), font_handle.clone(), Color::WHITE, 12.0),
             SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
         )
+        .with(Id::new())
         .with(Person)
         .with(Position(1000.0, 300.0))
         .with(Velocity(0.0, 0.0))
-        .with(Controlled::new(1000.0, 300.0, 3))
+        .with(Controlled::new(3))
+        .with(Size(5.0, 5.0))
         ;
 }
 // encounter plugin
@@ -338,6 +372,7 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
             //Label::new("H0".to_string(), font_handle.clone(), Color::RED, 12.0),
             SimpleRect::new(red_handle, Vec2::new(10.0, 10.0)),
         )
+        .with(Id::new())
         // spawn along the person component to signify that this entity is a person
         .with(Person)
         // spawn along the position component so that this entity has a physical position on the screen
@@ -346,14 +381,17 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         .with(Velocity(0.0, 0.0))
         // spawn along the hostile component so that this entity is considered hostile to the player
         .with(Hostile)
+        .with(Size(5.0, 5.0))
         // repeat for another hostile entity
         .spawn(
             SimpleRect::new(red_handle, Vec2::new(10.0, 10.0)),
         )
+        .with(Id::new())
         .with(Person)
         .with(Position(400.0, 200.0))
         .with(Velocity(0.0, 0.0))
         .with(Hostile)
+        .with(Size(5.0, 5.0))
         ;
 }
 // control plugin
@@ -375,7 +413,7 @@ impl Plugin for ControlPlugin {
         // add in the keyboard input system
         .add_system(keyboard_input_system.system())
         // add in the move player system
-        .add_system(move_player_system.system())
+        .add_system(move_controlled_system.system())
         // add in the control player system
         .add_system(control_player_system.system());
     }
@@ -475,43 +513,55 @@ fn keyboard_input_system(mut inputs: ResMut<InputState>, mut state: ResMut<Keybo
     }
 }
 
-// move player system
+// move controlled system
 // responsible for calculating the velocity vector of the player to get to
 // the desired move point and setting the player character's velocity
-fn move_player_system(mut query: Query<(&Controlled, &mut Velocity, &Position)>) {
+fn move_controlled_system(mut query: Query<(&Controlled, &mut Velocity, &Position)>) {
     for (state, mut vel, pos) in &mut query.iter() {
-        // get the distance vector from the player to the move point
-        let dist_vector = Vec2::new(state.move_to.0 - pos.0, state.move_to.1 - pos.1);
-        // the length of the distance vector is the distance between the two points
-        let dist = dist_vector.length();
-        // if distance is 0 then the velocity vector is 0
-        let mut new_vel = Vec2::new(0.0, 0.0);
-        // otherwise if distance is greater than 0
-        if dist > 0.0 {
-            // divide the distance by the distance factor and cap at 1.0
-            let ease_input = (dist / (2.75 * 50.0)).min(1.0);
+        let command = &state.current_command;
+        
+        match command.command_type {
+            CommandType::Move => {
+                // get the distance vector from the player to the move point
+                let dist_vector = Vec2::new(command.move_to.0 - pos.0, command.move_to.1 - pos.1);
+                // the length of the distance vector is the distance between the two points
+                let dist = dist_vector.length();
+                // if distance is 0 then the velocity vector is 0
+                let mut new_vel = Vec2::new(0.0, 0.0);
+                // otherwise if distance is greater than 0
+                if dist > 0.0 {
+                    // divide the distance by the distance factor and cap at 1.0
+                    let ease_input = (dist / (2.75 * 50.0)).min(1.0);
 
-            // new velocity vector is a rescaled exponential applied to the normalized distance vector
-            // the result is that speed is based on distance and varies according to an exponential curve
-            // and the velocity is always towards the move point
-            // if pathfinding is implemented for the player, then this will need to be changed
-            new_vel = ezing::expo_out( ease_input ) * (2.75 * 50.0) * dist_vector.normalize();
+                    // new velocity vector is a rescaled exponential applied to the normalized distance vector
+                    // the result is that speed is based on distance and varies according to an exponential curve
+                    // and the velocity is always towards the move point
+                    // if pathfinding is implemented for the player, then this will need to be changed
+                    new_vel = ezing::expo_out( ease_input ) * (2.75 * 50.0) * dist_vector.normalize();
+                }
+                // if the new x-velocity has insignificant magnitude,
+                // reduce it to 0
+                // this is to avoid sliding
+                if new_vel[0].abs() < 1.0 {
+                    new_vel[0] = 0.0;            
+                }
+                // if the new y-velocity has insignificant magnitude,
+                // reduce it to 0
+                // this is to avoid sliding
+                if new_vel[1].abs() < 1.0 {
+                    new_vel[1] = 0.0;
+                }
+                // set the velocity vector to use the new velocity vector
+                vel.0 = new_vel[0];
+                vel.1 = new_vel[1];
+            },
+            CommandType::Attack => {
+                
+            }
+            _ => {
+
+            },
         }
-        // if the new x-velocity has insignificant magnitude,
-        // reduce it to 0
-        // this is to avoid sliding
-        if new_vel[0].abs() < 1.0 {
-            new_vel[0] = 0.0;            
-        }
-        // if the new y-velocity has insignificant magnitude,
-        // reduce it to 0
-        // this is to avoid sliding
-        if new_vel[1].abs() < 1.0 {
-            new_vel[1] = 0.0;
-        }
-        // set the velocity vector to use the new velocity vector
-        vel.0 = new_vel[0];
-        vel.1 = new_vel[1];
     }
 }
 
@@ -531,12 +581,49 @@ fn convert_keycode_to_squad_pos(key: KeyCode) -> i32 {
     }
 }
 
+fn check_point_collision(point: (f32, f32), box_position: (f32, f32), box_radius: (f32, f32)) -> bool {
+    if (point.0 < box_position.0 + box_radius.0) && (point.0 > box_position.0 - box_radius.0)
+        && (point.1 < box_position.1 + box_radius.1) && (point.1 > box_position.1 - box_radius.1) {
+        true
+    }else{
+        false
+    }
+}
+
+#[derive(Copy, Clone)]
+enum CommandType {
+    Move,
+    Attack,
+    Empty,
+}
+
+impl Default for CommandType {
+    fn default() -> Self {
+        CommandType::Empty
+    }
+}
+
+
 // player control system
 // responsible for translating all inputs into the respective actions in-game
-fn control_player_system(inputs: Res<InputState>, mut controlstate: Query<&mut Controlled>, mut hostiles: Query<(&Hostile, &Position)>) {
+fn control_player_system(inputs: Res<InputState>, mut controlstate: Query<&mut Controlled>, mut hostiles: Query<(&Id, &Hostile, &Position, &Size)>) {
     // if the left mouse button is pressed
     if inputs.mouse_presses.contains(&MouseButton::Left) {
+        
+        let mut command_type = CommandType::Move;
+        let mut target_entity = "null".to_string();
 
+        // check if you clicked on something
+        for (id, _host, pos, size) in &mut hostiles.iter() {
+            //println!("entity is {}", id.id());
+            if check_point_collision(inputs.mouse_position, (pos.0, pos.1), (size.0, size.1)) {
+                //println!("clicked on {}", id.id());
+                command_type = CommandType::Attack;
+                target_entity = id.id();
+            }
+        }
+        
+        
         let mut squad_control = Vec::new();
         
         for key in &mut inputs.key_presses.iter() {
@@ -553,7 +640,32 @@ fn control_player_system(inputs: Res<InputState>, mut controlstate: Query<&mut C
 
         for mut state in &mut controlstate.iter() {
             if squad_control.contains(&state.squad_pos) {
-                state.move_to = inputs.mouse_position.clone();
+                
+                match command_type {
+                    CommandType::Move => {
+                        state.current_command = Command {
+                            command_type: command_type,
+                            move_to: inputs.mouse_position.clone(),
+                            target: "null".to_string(),
+                        };
+                    },
+                    CommandType::Attack => {
+                        state.current_command = Command {
+                            command_type: command_type,
+                            move_to: (f32::NAN, f32::NAN),
+                            target: target_entity.clone(),
+                        };
+                    },
+                    CommandType::Empty => {
+                        state.current_command = Command {
+                            command_type: command_type,
+                            move_to: (f32::NAN, f32::NAN),
+                            target: "null".to_string(),
+                        }
+                    },
+                }
+                
+                
             }
         }
     }
