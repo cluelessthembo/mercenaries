@@ -289,7 +289,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Person)
         .with(Position(800.0, 500.0))
         .with(Velocity(0.0, 0.0))
-        .with(Controlled::new(100.0, 100.0, 1))
+        .with(Controlled::new(800.0, 500.0, 1))
         .spawn(
             //Label::new("P3".to_string(), font_handle.clone(), Color::WHITE, 12.0),
             SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
@@ -297,7 +297,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Person)
         .with(Position(600.0, 100.0))
         .with(Velocity(0.0, 0.0))
-        .with(Controlled::new(100.0, 100.0, 2))
+        .with(Controlled::new(600.0, 100.0, 2))
         .spawn(
             //Label::new("P4".to_string(), font_handle.clone(), Color::WHITE, 12.0),
             SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
@@ -305,7 +305,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Person)
         .with(Position(1000.0, 300.0))
         .with(Velocity(0.0, 0.0))
-        .with(Controlled::new(100.0, 100.0, 3))
+        .with(Controlled::new(1000.0, 300.0, 3))
         ;
 }
 // encounter plugin
