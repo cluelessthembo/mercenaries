@@ -71,6 +71,7 @@ fn main() {
     .add_plugin(ControlPlugin)
     // add in the AI plugin
     .add_plugin(ActionsPlugin)
+    .add_plugin(AnimationPlugin)
     // run the app
     .run();
 }
@@ -82,7 +83,7 @@ pub struct FPSMeter;
 // initial setup function, 
 // spawn in necessary entities (cameras)
 // along with fps counter
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>){
+fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>, asset_server: Res<AssetServer>){
     let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
 
     commands
@@ -375,6 +376,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
     let green_handle = materials.add(Color::GREEN.into());
     let blue_handle = materials.add(Color::BLUE.into());
 
+
     commands
         // spawn in text components for use as label
         .spawn(
@@ -392,6 +394,8 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Controlled::new(0))
         .with(Brain::new())
         .with(Size(5.0, 5.0))
+
+        .with(get_player_sprite_template(&mut materials))
         // same deal for the other three persons
         // note however that only the first has the controlled component
         // we will consider that entity our player character
@@ -406,6 +410,9 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Controlled::new(1))
         .with(Brain::new())
         .with(Size(5.0, 5.0))
+
+        .with(get_squadmate_sprite_template(&mut materials))
+
         .spawn(
             //Label::new("P3".to_string(), font_handle.clone(), Color::WHITE, 12.0),
             SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
@@ -417,6 +424,9 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Controlled::new(2))
         .with(Brain::new())
         .with(Size(5.0, 5.0))
+
+        .with(get_squadmate_sprite_template(&mut materials))
+
         .spawn(
             //Label::new("P4".to_string(), font_handle.clone(), Color::WHITE, 12.0),
             SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
@@ -428,6 +438,8 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Controlled::new(3))
         .with(Brain::new())
         .with(Size(5.0, 5.0))
+
+        .with(get_squadmate_sprite_template(&mut materials))
         ;
 }
 // encounter plugin
@@ -452,13 +464,13 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
     // this is a font handle, a handle to a font asset loaded in by the asset server from the local directory
     //let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
 
-    let red_handle = materials.add(Color::RED.into());
+    let black_handle = materials.add(Color::BLACK.into());
     
     commands
         // spawn in text components for the label
         .spawn(
             //Label::new("H0".to_string(), font_handle.clone(), Color::RED, 12.0),
-            SimpleRect::new(red_handle, Vec2::new(10.0, 10.0)),
+            SimpleRect::new(black_handle, Vec2::new(10.0, 10.0)),
         )
         .with(Id::new())
         // spawn along the person component to signify that this entity is a person
@@ -473,7 +485,7 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         .with(Size(5.0, 5.0))
         // repeat for another hostile entity
         .spawn(
-            SimpleRect::new(red_handle, Vec2::new(10.0, 10.0)),
+            SimpleRect::new(black_handle, Vec2::new(10.0, 10.0)),
         )
         .with(Id::new())
         .with(Person)
@@ -815,9 +827,9 @@ impl Plugin for ActionsPlugin {
 
 // run action system
 // responsible for implementing the various actions used for lower level control of entities
-fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity)>, mut ent_query: Query<(&Id, &Position)>) {
+fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity, &mut SpriteData)>, mut ent_query: Query<(&Id, &Position)>) {
     // go through all entities with a brain, position, and velocity
-    for (mut actions, pos, mut vel) in &mut query.iter() {
+    for (mut actions, pos, mut vel, mut sprite) in &mut query.iter() {
         // get the current action
         let action = &actions.current_action;
 
@@ -825,6 +837,8 @@ fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity)>, m
         match action.action_type {
             // move actions will move the entity to a stationary point
             ActionType::Move => {
+
+                sprite.animation_type = AnimationType::Move;
 
                 // get the distance vector from the player to the move point
                 let dist_vector = Vec2::new(action.target.0.unwrap().0 - pos.0, action.target.0.unwrap().1 - pos.1);
@@ -876,6 +890,8 @@ fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity)>, m
             },
             // track actions move the entity to a moving entity
             ActionType::Track => {
+
+                sprite.animation_type = AnimationType::Move;
 
                 // update target position
                 let mut target_pos = (f32::NAN, f32::NAN);
@@ -941,11 +957,11 @@ fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity)>, m
             // attack actions will attack a targeted entity
             ActionType::Attack => {
                 // currently attacking does nothing but print out that you're attacking
-                println!("CURR ACTION: ATTACK");
-
+                sprite.animation_type = AnimationType::Attack;
             },
             // empty actions do nothing
             ActionType::Empty => {
+                sprite.animation_type = AnimationType::Idle;
                 // empty actions do nothing, immediately move to the next
                 // pop actions queue and ready next action
                 // check if there are still actions in the action queue
@@ -961,4 +977,247 @@ fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity)>, m
             },
         }
     }
+}
+
+struct AnimationPlugin;
+
+impl Plugin for AnimationPlugin {
+    fn build(&self, app: &mut AppBuilder) {
+        app.add_resource(AnimationFrameRate::new())
+            .add_system(animate_system.system());
+    }
+}
+
+enum AnimationType {
+    Attack,
+    Move,
+    Idle,
+}
+
+struct SpriteData {
+    animation_type: AnimationType,
+
+    move_frames: Vec<SpriteComponents>,
+    move_frame_index: usize,
+
+    idle_frames: Vec<SpriteComponents>,
+    idle_frame_index: usize,
+
+    attack_frames: Vec<SpriteComponents>,
+    attack_frame_index: usize,
+}
+
+impl SpriteData {
+    fn new() -> Self {
+        SpriteData {
+            animation_type: AnimationType::Idle,
+
+            move_frames: Vec::new(),
+            move_frame_index: 0,
+            
+            idle_frames: Vec::new(),
+            idle_frame_index: 0,
+
+            attack_frames: Vec::new(),
+            attack_frame_index: 0,
+        }
+    }
+
+    fn add_move_frame(&mut self, sprite: SpriteComponents) {
+        self.move_frames.push(sprite);
+    }
+    fn reset_move_animation(&mut self) {
+        self.move_frame_index = 0;
+    }
+    fn get_move_frame(&mut self) -> SpriteComponents {
+        // reset frame index for other animations
+        self.reset_idle_animation();
+        self.reset_attack_animation();
+
+        // get frame for move animation
+        let copyover = &self.move_frames[self.move_frame_index];
+        // increment frame index
+        self.move_frame_index = (self.move_frame_index + 1) % self.move_frames.len();
+        
+        // manually copy over sprite components because copy/clone aren't implemented for them
+        SpriteComponents {
+            material: copyover.material,
+            translation: copyover.translation,
+            sprite: Sprite {
+                size: copyover.sprite.size,
+            },
+            ..Default::default()
+        }
+    }
+
+
+    fn add_idle_frame(&mut self, sprite: SpriteComponents) {
+        self.idle_frames.push(sprite);
+    }
+    fn reset_idle_animation(&mut self) {
+        self.idle_frame_index = 0;
+    }
+    fn get_idle_frame(&mut self) -> SpriteComponents {
+        // reset frame index for other animations
+        self.reset_attack_animation();
+        self.reset_move_animation();
+
+        // get frame for idle animation
+        let copyover = &self.idle_frames[self.idle_frame_index];
+        // increment frame index
+        self.idle_frame_index = (self.idle_frame_index + 1) % self.idle_frames.len();
+
+        // manually copy over sprite components because copy/clone aren't implemented for them
+        SpriteComponents {
+            material: copyover.material,
+            translation: copyover.translation,
+            sprite: Sprite {
+                size: copyover.sprite.size,
+            },
+            ..Default::default()
+        }
+    }
+
+
+    fn add_attack_frame(&mut self, sprite: SpriteComponents) {
+        self.attack_frames.push(sprite);
+    }
+    fn reset_attack_animation(&mut self) {
+        self.attack_frame_index = 0;
+    }
+    fn get_attack_frame(&mut self) -> SpriteComponents {
+        // reset frame index for other animations
+        self.reset_idle_animation();
+        self.reset_move_animation();
+        
+        // get frame for attack animation
+        let copyover = &self.attack_frames[self.attack_frame_index];
+        // increment frame index
+        self.attack_frame_index = (self.attack_frame_index + 1) % self.attack_frames.len();
+        
+        // manually copy over sprite components because copy/clone aren't implemented for them
+        SpriteComponents {
+            material: copyover.material,
+            translation: copyover.translation,
+            sprite: Sprite {
+                size: copyover.sprite.size,
+            },
+            ..Default::default()
+        }
+    }
+}
+
+struct AnimationFrameRate(Timer);
+
+impl AnimationFrameRate {
+    fn new() -> Self {
+        // 24fps per second animation frame rate
+        AnimationFrameRate(Timer::from_seconds(4.0 / 24.0))
+    }
+}
+
+fn animate_system(time: Res<Time>, mut timer: ResMut<AnimationFrameRate>, mut query: Query<(&mut Handle<ColorMaterial>, &mut Sprite, &mut SpriteData)>) {
+    // tick up on animation frame rate timer
+    timer.0.tick(time.delta_seconds);
+        
+    // check if it's time for a new animation frame
+    if timer.0.finished {
+        for (mut material, mut sprite, mut frames) in &mut query.iter() {    
+            let mut sprite_frame: Option<SpriteComponents> = None;
+
+            match frames.animation_type {
+                AnimationType::Attack => {
+                    // get the next attack frame
+                    sprite_frame = Some(frames.get_attack_frame());
+                },
+                AnimationType::Move => {
+                    // get the next move frame
+                    sprite_frame = Some(frames.get_move_frame());
+                },
+                AnimationType::Idle => {
+                    // get the next idle frame
+                    sprite_frame = Some(frames.get_idle_frame());
+                }
+            }
+
+            // if the frame exists
+            if let Some(frame) = sprite_frame {
+                *material = frame.material;
+                *sprite = frame.sprite;
+            }
+        }
+        timer.0.reset();
+    }
+}
+
+fn get_player_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) -> SpriteData {
+    let mut template = SpriteData::new();
+    
+    let idle_one_handle = materials.add(Color::GREEN.into());
+    let idle_two_handle = materials.add(Color::rgb(0.1, 1.0, 0.1).into());
+    let idle_three_handle = materials.add(Color::rgb(0.25, 1.0, 0.25).into());
+    let idle_four_handle = materials.add(Color::rgb(0.1, 1.0, 0.1).into());
+    
+    let attack_one_handle = materials.add(Color::rgb(1.0, 0.0, 0.0).into());
+    let attack_two_handle = materials.add(Color::rgb(0.75, 0.25, 0.0).into());
+    let attack_three_handle = materials.add(Color::rgb(0.5, 0.5, 0.0).into());
+    let attack_four_handle = materials.add(Color::rgb(0.0, 1.0, 0.0).into());    
+    
+    let move_one_handle = materials.add(Color::GREEN.into());
+    let move_two_handle = materials.add(Color::rgb(0.0, 0.75, 0.0).into());
+    let move_three_handle = materials.add(Color::rgb(0.0, 0.5, 0.0).into());
+    let move_four_handle = materials.add(Color::rgb(0.0, 0.75, 0.0).into());
+
+    template.add_idle_frame(SimpleRect::new(idle_one_handle, Vec2::new(10.0, 10.0)));
+    template.add_idle_frame(SimpleRect::new(idle_two_handle, Vec2::new(10.0, 10.0)));
+    template.add_idle_frame(SimpleRect::new(idle_three_handle, Vec2::new(10.0, 10.0)));
+    template.add_idle_frame(SimpleRect::new(idle_four_handle, Vec2::new(10.0, 10.0)));
+    
+    template.add_attack_frame(SimpleRect::new(attack_one_handle, Vec2::new(10.0, 10.0)));
+    template.add_attack_frame(SimpleRect::new(attack_two_handle, Vec2::new(10.0, 10.0)));
+    template.add_attack_frame(SimpleRect::new(attack_three_handle, Vec2::new(10.0, 10.0)));
+    template.add_attack_frame(SimpleRect::new(attack_four_handle, Vec2::new(10.0, 10.0)));
+
+    template.add_move_frame(SimpleRect::new(move_one_handle, Vec2::new(10.0, 10.0)));
+    template.add_move_frame(SimpleRect::new(move_two_handle, Vec2::new(10.0, 10.0)));
+    template.add_move_frame(SimpleRect::new(move_three_handle, Vec2::new(10.0, 10.0)));
+    template.add_move_frame(SimpleRect::new(move_four_handle, Vec2::new(10.0, 10.0)));
+    
+    template
+}
+
+fn get_squadmate_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) -> SpriteData {
+    let mut template = SpriteData::new();
+    
+    let idle_one_handle = materials.add(Color::BLUE.into());
+    let idle_two_handle = materials.add(Color::rgb(0.1, 0.1, 1.0).into());
+    let idle_three_handle = materials.add(Color::rgb(0.25, 0.25, 1.0).into());
+    let idle_four_handle = materials.add(Color::rgb(0.1, 0.1, 1.0).into());
+    
+    let attack_one_handle = materials.add(Color::rgb(1.0, 0.0, 0.0).into());
+    let attack_two_handle = materials.add(Color::rgb(0.75, 0.0, 0.25).into());
+    let attack_three_handle = materials.add(Color::rgb(0.5, 0.0, 0.5).into());
+    let attack_four_handle = materials.add(Color::rgb(0.0, 0.0, 1.0).into());    
+    
+    let move_one_handle = materials.add(Color::BLUE.into());
+    let move_two_handle = materials.add(Color::rgb(0.0, 0.0, 0.75).into());
+    let move_three_handle = materials.add(Color::rgb(0.0, 0.0, 0.5).into());
+    let move_four_handle = materials.add(Color::rgb(0.0, 0.0, 0.75).into());
+
+    template.add_idle_frame(SimpleRect::new(idle_one_handle, Vec2::new(10.0, 10.0)));
+    template.add_idle_frame(SimpleRect::new(idle_two_handle, Vec2::new(10.0, 10.0)));
+    template.add_idle_frame(SimpleRect::new(idle_three_handle, Vec2::new(10.0, 10.0)));
+    template.add_idle_frame(SimpleRect::new(idle_four_handle, Vec2::new(10.0, 10.0)));
+    
+    template.add_attack_frame(SimpleRect::new(attack_one_handle, Vec2::new(10.0, 10.0)));
+    template.add_attack_frame(SimpleRect::new(attack_two_handle, Vec2::new(10.0, 10.0)));
+    template.add_attack_frame(SimpleRect::new(attack_three_handle, Vec2::new(10.0, 10.0)));
+    template.add_attack_frame(SimpleRect::new(attack_four_handle, Vec2::new(10.0, 10.0)));
+
+    template.add_move_frame(SimpleRect::new(move_one_handle, Vec2::new(10.0, 10.0)));
+    template.add_move_frame(SimpleRect::new(move_two_handle, Vec2::new(10.0, 10.0)));
+    template.add_move_frame(SimpleRect::new(move_three_handle, Vec2::new(10.0, 10.0)));
+    template.add_move_frame(SimpleRect::new(move_four_handle, Vec2::new(10.0, 10.0)));
+
+    template
 }
