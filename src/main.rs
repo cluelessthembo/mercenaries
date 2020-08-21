@@ -616,6 +616,7 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain, &mut Ve
                 actions.current_action = Action::default();
                 actions.action_queue.clear();
 
+                // add move action to the target location
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Move,
                     target: (Some(command.move_to), None),
@@ -626,12 +627,14 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain, &mut Ve
                 actions.current_action = Action::default();
                 actions.action_queue.clear();
 
+                // add move action to the target entity
                 // get within a certain distance of the target
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Track,
                     target: (None, Some(command.target.clone())),
                 });
 
+                // add attack action
                 // attack the target
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Attack,
