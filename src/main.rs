@@ -11,7 +11,8 @@ use bevy::{
 use ezing;
 // imports for id generation
 use uuid::Uuid;
-
+// imports for VecDeque - which is more efficient at removing items from the front
+use std::collections::VecDeque;
 struct Id(String);
 
 impl Id {
@@ -68,6 +69,8 @@ fn main() {
     .add_plugin(MovingPlugin)
     // add in the player control plugin
     .add_plugin(ControlPlugin)
+    // add in the AI plugin
+    .add_plugin(ActionsPlugin)
     // run the app
     .run();
 }
@@ -172,6 +175,7 @@ fn draw_text_system(mut query: Query<(&Text, &mut Style, &Position)>){
     }
 }
 
+// function to get the correct translation coordinates from a given position
 fn get_translate_from_position(x: f32, y: f32) -> (f32, f32) {
     // translation has (0, 0) at the center of the screen
     // it also has the y-coordinates increase from bottom to top
@@ -182,11 +186,16 @@ fn get_translate_from_position(x: f32, y: f32) -> (f32, f32) {
     (x - 1600.0 / 2.0, (900.0 - y) - 900.0 / 2.0)
 }
 
+// draw sprite system
+// responsible for moving sprites to their proper positions for 
+// display
 fn draw_sprite_system(mut query: Query<(&Sprite, &mut Translation, &Position)>){
     for (_sprite, mut transl, pos) in &mut query.iter() {
         
+        // get the proper coordinates for translation
         let adj_pos = get_translate_from_position(pos.0, pos.1);
 
+        // assign coordinates
         transl.0 = Vec3::new(adj_pos.0, adj_pos.1, 0.0);
     }
 }
@@ -200,27 +209,97 @@ struct Person;
 // spawn this component along with any entity that should be considered controlled by the player
 #[derive(Default)]
 struct Controlled {
+    // current command given to this entity
     current_command: Command,
+    // index in the squad
     squad_pos: i32,
-    command_queue: Vec<Command>,
+    // command queue 
+    // currently not under use, new commands 
+    // will replace old commands instead 
+    // of queueing up
+    command_queue: VecDeque<Command>,
 }
 
 impl Controlled {
+    // initialize a new Controlled struct
     fn new(i: i32) -> Self {
         Controlled {
+            // initialized with an empty command
             current_command: Command::default(),
+            // needs to be an assigned a squad index
             squad_pos: i,
-            command_queue: Vec::new(),
+            // initialized with an empty command queue
+            command_queue: VecDeque::new(),
         }
     }
 }
 
+// struct that represents a command
 #[derive(Default)]
 struct Command {
+    // requires a command type
     command_type: CommandType,
+    // target is the id of the target entity, if it exists
     target: String,
+    // move_to is the target coordinate, if it exists
     move_to: (f32, f32),
 }
+// Brain component
+// holds the current action as well as succeeding actions
+struct Brain {
+    // current action is the action being worked on
+    current_action: Action,
+    // action queue holds the next actions, after the current one
+    action_queue: VecDeque<Action>,
+}
+
+impl Brain {
+    // function to initialise a new Brain component
+    fn new() -> Self {
+        Brain {
+            // initialise with an empty action
+            current_action: Action::default(),
+            // initialise with an empty action queue
+            action_queue: VecDeque::new(),
+        }
+    }
+}
+
+// enum for the type of action 
+#[derive(Debug)]
+enum ActionType {
+    // move actions will move entities to a stationary point
+    Move,
+    // attack actions will launch attacks at an entity until it 
+    // ceases to become hostile
+    Attack,
+    // track actions will move entities to follow a moving entity
+    Track,
+    // empty actions do nothing
+    Empty,
+}
+
+// action struct
+#[derive(Debug)]
+struct Action {
+    action_type: ActionType,
+    // target is either a coordinate point or an entity id
+    target: (Option<(f32, f32)>, Option<String>),
+}
+
+impl Default for Action {
+    // default function for action
+    // gives a default Action, which is an empty action
+    fn default() -> Self {
+        Action {
+            action_type: ActionType::Empty,
+            target: (None, None),
+        }
+    }
+}
+
+// labels are currently not under use
+/*
 // label struct
 // this struct is a convenient way of generating the necessary text components to label an entity
 struct Label;
@@ -255,13 +334,18 @@ impl Label {
         }
     }
 }
+*/
 
+// helper struct for a simple rectangle sprite
 struct SimpleRect;
 
 impl SimpleRect {
+    // this function gives the necessary components for a rectanglular sprite
+    // takes a color handle, and a size vector and returns SpriteComponents
     fn new(color_handle: Handle<ColorMaterial>, size: Vec2) -> SpriteComponents {
         SpriteComponents {
             material: color_handle,
+            // move sprite off screen
             translation: Translation(Vec3::new(-1000.0, -1000.0, 0.0)),
             sprite: Sprite {
                 size: size,
@@ -306,6 +390,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Velocity(0.0, 0.0))
         // spawn controlled component along with so that this entity is controlled by the player
         .with(Controlled::new(0))
+        .with(Brain::new())
         .with(Size(5.0, 5.0))
         // same deal for the other three persons
         // note however that only the first has the controlled component
@@ -319,6 +404,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Position(800.0, 500.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(1))
+        .with(Brain::new())
         .with(Size(5.0, 5.0))
         .spawn(
             //Label::new("P3".to_string(), font_handle.clone(), Color::WHITE, 12.0),
@@ -329,6 +415,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Position(600.0, 100.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(2))
+        .with(Brain::new())
         .with(Size(5.0, 5.0))
         .spawn(
             //Label::new("P4".to_string(), font_handle.clone(), Color::WHITE, 12.0),
@@ -339,6 +426,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Position(1000.0, 300.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(3))
+        .with(Brain::new())
         .with(Size(5.0, 5.0))
         ;
 }
@@ -381,6 +469,7 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         .with(Velocity(0.0, 0.0))
         // spawn along the hostile component so that this entity is considered hostile to the player
         .with(Hostile)
+        .with(Brain::new())
         .with(Size(5.0, 5.0))
         // repeat for another hostile entity
         .spawn(
@@ -391,6 +480,7 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         .with(Position(400.0, 200.0))
         .with(Velocity(0.0, 0.0))
         .with(Hostile)
+        .with(Brain::new())
         .with(Size(5.0, 5.0))
         ;
 }
@@ -415,7 +505,7 @@ impl Plugin for ControlPlugin {
         // add in the move player system
         .add_system(move_controlled_system.system())
         // add in the control player system
-        .add_system(control_player_system.system());
+        .add_system(player_control_system.system());
     }
 }
 // the inputstate struct is what we will read in the rest
@@ -516,14 +606,225 @@ fn keyboard_input_system(mut inputs: ResMut<InputState>, mut state: ResMut<Keybo
 // move controlled system
 // responsible for calculating the velocity vector of the player to get to
 // the desired move point and setting the player character's velocity
-fn move_controlled_system(mut query: Query<(&Controlled, &mut Velocity, &Position)>) {
-    for (state, mut vel, pos) in &mut query.iter() {
+fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain, &mut Velocity, &Position)>) {
+    for (mut state, mut actions, mut vel, pos) in &mut query.iter() {
         let command = &state.current_command;
         
         match command.command_type {
             CommandType::Move => {
+                // clear current actions to replace with new actions
+                actions.current_action = Action::default();
+                actions.action_queue.clear();
+
+                actions.action_queue.push_back(Action {
+                    action_type: ActionType::Move,
+                    target: (Some(command.move_to), None),
+                });
+            },
+            CommandType::Attack => {
+                // clear current actions to replace with new actions
+                actions.current_action = Action::default();
+                actions.action_queue.clear();
+
+                // get within a certain distance of the target
+                actions.action_queue.push_back(Action {
+                    action_type: ActionType::Track,
+                    target: (None, Some(command.target.clone())),
+                });
+
+                // attack the target
+                actions.action_queue.push_back(Action {
+                    action_type: ActionType::Attack,
+                    target: (None, Some(command.target.clone())),
+                });
+            }
+            _ => {
+
+            },
+        }
+
+        // pop the command queue and ready the next command
+        if let Some(command) = state.command_queue.pop_front() {
+            // if there are more commands in the command queue
+            // set it to be the current command
+            state.current_command = command;
+        }else{
+            // if there are no more commands in the command queue
+            // set the current command to be the empty command
+            state.current_command = Command::default();
+        }   
+    }
+}
+
+// function to convert the keys pressed to the squad indices they're mapped to
+fn convert_keycode_to_squad_pos(key: KeyCode) -> i32 {
+    match key {
+        KeyCode::Key0 => 0,
+        KeyCode::Key1 => 1,
+        KeyCode::Key2 => 2,
+        KeyCode::Key3 => 3,
+        KeyCode::Key4 => 4,
+        KeyCode::Key5 => 5,
+        KeyCode::Key6 => 6,
+        KeyCode::Key7 => 7,
+        KeyCode::Key8 => 8,
+        KeyCode::Key9 => 9,
+        // if this is not a valid mapping, return -1
+        _ => -1
+    }
+}
+
+// this function checks if a point is in the a box at a certain position with a certain 'radius'
+// point is the coordinate being checked
+// box_position is the coordinate where the box is
+// box_radius is the distance the edges are from box_position
+fn check_point_collision(point: (f32, f32), box_position: (f32, f32), box_radius: (f32, f32)) -> bool {
+    if (point.0 < box_position.0 + box_radius.0) && (point.0 > box_position.0 - box_radius.0)
+        && (point.1 < box_position.1 + box_radius.1) && (point.1 > box_position.1 - box_radius.1) {
+        true
+    }else{
+        false
+    }
+}
+
+// enum for the command type
+#[derive(Copy, Clone)]
+enum CommandType {
+    // move command orders a pawn to move to a certain spot
+    Move,
+    // attack command orders a pawn to attack a certain entity
+    Attack,
+    // empty command does nothing
+    Empty,
+}
+
+// implementation for the command type enum
+impl Default for CommandType {
+    // default function for the command type
+    // returns the empty command type
+    fn default() -> Self {
+        CommandType::Empty
+    }
+}
+
+
+// player control system
+// responsible for translating all inputs into the respective actions in-game
+fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut Controlled>, mut hostiles: Query<(&Id, &Hostile, &Position, &Size)>) {
+    // if the left mouse button was just pressed
+    if inputs.mouse_just_presses.contains(&MouseButton::Left) {
+        
+        // if the left mouse button was clicked, default to a move command
+        let mut command_type = CommandType::Move;
+        // a move command by default has no target entity
+        let mut target_entity = "null".to_string();
+
+        // check if you clicked on something
+        for (id, _host, pos, size) in &mut hostiles.iter() {
+            // check if an entity was clicked
+            if check_point_collision(inputs.mouse_position, (pos.0, pos.1), (size.0, size.1)) {
+                // if an entity was clicked
+                // switch command type to an attack type    
+                command_type = CommandType::Attack;
+                // set the target entity to the entity clicked
+                target_entity = id.id();
+                // once target entity is found, break out of the loop
+                break;
+            }
+        }
+        
+        // squad_control vector contains all the squad indices being ordered
+        let mut squad_control = Vec::new();
+        
+        // check which hotkeys are being pressed
+        for key in &mut inputs.key_presses.iter() {
+            // attempt to convert the hotkey keycode to the corresponding squad index
+            let squad_pos = convert_keycode_to_squad_pos(*key);
+            // if the squad index is valid then add it to the squad_control vector
+            if squad_pos >= 0 {
+                squad_control.push(squad_pos);
+            }
+        }
+
+        // check if squad_control is empty
+        if squad_control.is_empty() {
+            // if no squad keys are pressed, assume controls are for player
+            squad_control.push(0);
+        }
+
+        // go through all the controlled components
+        for mut state in &mut controlstate.iter() {
+            // if this controlled component is one of the ones being commanded
+            if squad_control.contains(&state.squad_pos) {
+                
+                // note that current behaviour is to replace the current command
+                // at some point we may want the capability to queue up multiple commands
+                // check the command type
+                match command_type {
+                    // if the command type is move
+                    CommandType::Move => {
+                        // set the current command to a move type command
+                        // towards the cursor position
+                        state.current_command = Command {
+                            command_type: command_type,
+                            move_to: inputs.mouse_position.clone(),
+                            target: "null".to_string(),
+                        };
+                    },
+                    // if the command type is attack
+                    CommandType::Attack => {
+                        // set the current command to an attack type command
+                        // at the entity clicked
+                        state.current_command = Command {
+                            command_type: command_type,
+                            move_to: (f32::NAN, f32::NAN),
+                            target: target_entity.clone(),
+                        };
+                    },
+                    // if the command type is empty
+                    CommandType::Empty => {
+                        // set the current command to an empty type command
+                        state.current_command = Command {
+                            command_type: command_type,
+                            move_to: (f32::NAN, f32::NAN),
+                            target: "null".to_string(),
+                        }
+                    },
+                }
+                
+                
+            }
+        }
+    }
+}
+
+// actions plugin
+// responsible for implementing/managing an interface that allows for lower level control of entities
+struct ActionsPlugin;
+
+// boilerplate code for the plugin
+impl Plugin for ActionsPlugin {
+    fn build(&self, app: &mut AppBuilder){
+        // add in the run action system
+        app.add_system(run_action_system.system());
+    }
+}
+
+// run action system
+// responsible for implementing the various actions used for lower level control of entities
+fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity)>, mut ent_query: Query<(&Id, &Position)>) {
+    // go through all entities with a brain, position, and velocity
+    for (mut actions, pos, mut vel) in &mut query.iter() {
+        // get the current action
+        let action = &actions.current_action;
+
+        // check the action type
+        match action.action_type {
+            // move actions will move the entity to a stationary point
+            ActionType::Move => {
+
                 // get the distance vector from the player to the move point
-                let dist_vector = Vec2::new(command.move_to.0 - pos.0, command.move_to.1 - pos.1);
+                let dist_vector = Vec2::new(action.target.0.unwrap().0 - pos.0, action.target.0.unwrap().1 - pos.1);
                 // the length of the distance vector is the distance between the two points
                 let dist = dist_vector.length();
                 // if distance is 0 then the velocity vector is 0
@@ -554,119 +855,107 @@ fn move_controlled_system(mut query: Query<(&Controlled, &mut Velocity, &Positio
                 // set the velocity vector to use the new velocity vector
                 vel.0 = new_vel[0];
                 vel.1 = new_vel[1];
-            },
-            CommandType::Attack => {
-                
-            }
-            _ => {
 
-            },
-        }
-    }
-}
-
-fn convert_keycode_to_squad_pos(key: KeyCode) -> i32 {
-    match key {
-        KeyCode::Key0 => 0,
-        KeyCode::Key1 => 1,
-        KeyCode::Key2 => 2,
-        KeyCode::Key3 => 3,
-        KeyCode::Key4 => 4,
-        KeyCode::Key5 => 5,
-        KeyCode::Key6 => 6,
-        KeyCode::Key7 => 7,
-        KeyCode::Key8 => 8,
-        KeyCode::Key9 => 9,
-        _ => -1
-    }
-}
-
-fn check_point_collision(point: (f32, f32), box_position: (f32, f32), box_radius: (f32, f32)) -> bool {
-    if (point.0 < box_position.0 + box_radius.0) && (point.0 > box_position.0 - box_radius.0)
-        && (point.1 < box_position.1 + box_radius.1) && (point.1 > box_position.1 - box_radius.1) {
-        true
-    }else{
-        false
-    }
-}
-
-#[derive(Copy, Clone)]
-enum CommandType {
-    Move,
-    Attack,
-    Empty,
-}
-
-impl Default for CommandType {
-    fn default() -> Self {
-        CommandType::Empty
-    }
-}
-
-
-// player control system
-// responsible for translating all inputs into the respective actions in-game
-fn control_player_system(inputs: Res<InputState>, mut controlstate: Query<&mut Controlled>, mut hostiles: Query<(&Id, &Hostile, &Position, &Size)>) {
-    // if the left mouse button is pressed
-    if inputs.mouse_presses.contains(&MouseButton::Left) {
-        
-        let mut command_type = CommandType::Move;
-        let mut target_entity = "null".to_string();
-
-        // check if you clicked on something
-        for (id, _host, pos, size) in &mut hostiles.iter() {
-            //println!("entity is {}", id.id());
-            if check_point_collision(inputs.mouse_position, (pos.0, pos.1), (size.0, size.1)) {
-                //println!("clicked on {}", id.id());
-                command_type = CommandType::Attack;
-                target_entity = id.id();
-            }
-        }
-        
-        
-        let mut squad_control = Vec::new();
-        
-        for key in &mut inputs.key_presses.iter() {
-            let squad_pos = convert_keycode_to_squad_pos(*key);
-            if squad_pos >= 0 {
-                squad_control.push(squad_pos);
-            }
-        }
-
-        if squad_control.is_empty() {
-            // if no squad keys are pressed, assume controls are for player
-            squad_control.push(0);
-        }
-
-        for mut state in &mut controlstate.iter() {
-            if squad_control.contains(&state.squad_pos) {
-                
-                match command_type {
-                    CommandType::Move => {
-                        state.current_command = Command {
-                            command_type: command_type,
-                            move_to: inputs.mouse_position.clone(),
-                            target: "null".to_string(),
-                        };
-                    },
-                    CommandType::Attack => {
-                        state.current_command = Command {
-                            command_type: command_type,
-                            move_to: (f32::NAN, f32::NAN),
-                            target: target_entity.clone(),
-                        };
-                    },
-                    CommandType::Empty => {
-                        state.current_command = Command {
-                            command_type: command_type,
-                            move_to: (f32::NAN, f32::NAN),
-                            target: "null".to_string(),
-                        }
-                    },
+                // if no longer moving
+                if vel.0 == 0.0 && vel.1 == 0.0 {
+                    // pop actions queue and ready next action
+                    // check if there are still actions in the action queue
+                    if let Some(action) = actions.action_queue.pop_front() {
+                        // if there are still more actions
+                        // set the next action to be the current action
+                        actions.current_action = action;
+                    }else{
+                        // if there are no more actions in the action queue
+                        // set the current action to be the empty action
+                        actions.current_action = Action::default();
+                    }
                 }
-                
-                
-            }
+            },
+            // track actions move the entity to a moving entity
+            ActionType::Track => {
+
+                // update target position
+                let mut target_pos = (f32::NAN, f32::NAN);
+
+                // go through entities and find the correct position component
+                for (id, pos) in &mut ent_query.iter() {
+                    // check if the id matches
+                    if *action.target.1.as_ref().unwrap() == id.id() {
+                        // set the target position
+                        target_pos = (pos.0, pos.1);
+                    }
+                }
+
+
+                // get the distance vector from the player to the move point
+                let dist_vector = Vec2::new(target_pos.0 - pos.0, target_pos.1 - pos.1);
+                // the length of the distance vector is the distance between the two points
+                let dist = dist_vector.length();
+                // if distance is 0 then the velocity vector is 0
+                let mut new_vel = Vec2::new(0.0, 0.0);
+                // otherwise if distance is greater than 0
+                if dist > 0.0 {
+                    // divide the distance by the distance factor and cap at 1.0
+                    let ease_input = (dist / (2.75 * 50.0)).min(1.0);
+
+                    // new velocity vector is a rescaled exponential applied to the normalized distance vector
+                    // the result is that speed is based on distance and varies according to an exponential curve
+                    // and the velocity is always towards the move point
+                    // if pathfinding is implemented for the player, then this will need to be changed
+                    new_vel = ezing::expo_out( ease_input ) * (2.75 * 50.0) * dist_vector.normalize();
+                }
+                // if the new x-velocity has insignificant magnitude,
+                // reduce it to 0
+                // this is to avoid sliding
+                if new_vel[0].abs() < 1.0 {
+                    new_vel[0] = 0.0;            
+                }
+                // if the new y-velocity has insignificant magnitude,
+                // reduce it to 0
+                // this is to avoid sliding
+                if new_vel[1].abs() < 1.0 {
+                    new_vel[1] = 0.0;
+                }
+                // set the velocity vector to use the new velocity vector
+                vel.0 = new_vel[0];
+                vel.1 = new_vel[1];
+
+                // if no longer moving (probably at destination)
+                if vel.0 == 0.0 && vel.1 == 0.0 {
+                    // pop actions queue and ready next action
+                    // check if there are still actions in the action queue
+                    if let Some(action) = actions.action_queue.pop_front() {
+                        // if there are still more actions
+                        // set the next action to be the current action
+                        actions.current_action = action;
+                    }else{
+                        // if there are no more actions in the action queue
+                        // set the current action to be the empty action
+                        actions.current_action = Action::default();
+                    }
+                }
+            },
+            // attack actions will attack a targeted entity
+            ActionType::Attack => {
+                // currently attacking does nothing but print out that you're attacking
+                println!("CURR ACTION: ATTACK");
+
+            },
+            // empty actions do nothing
+            ActionType::Empty => {
+                // empty actions do nothing, immediately move to the next
+                // pop actions queue and ready next action
+                // check if there are still actions in the action queue
+                if let Some(action) = actions.action_queue.pop_front() {
+                    // if there are still more actions
+                    // set the next action to be the current action
+                    actions.current_action = action;
+                }else{
+                    // if there are no more actions in the action queue
+                    // set the current action to be the empty action
+                    actions.current_action = Action::default();
+                }
+            },
         }
     }
 }
