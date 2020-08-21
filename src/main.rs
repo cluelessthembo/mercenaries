@@ -11,8 +11,8 @@ use bevy::{
 use ezing;
 // imports for id generation
 use uuid::Uuid;
-// imports for VecDeque - which is more efficient at removing items from the front
-use std::collections::VecDeque;
+// imports for data structures
+use std::collections::{VecDeque, HashMap};
 struct Id(String);
 
 impl Id {
@@ -286,6 +286,10 @@ struct Action {
     action_type: ActionType,
     // target is either a coordinate point or an entity id
     target: (Option<(f32, f32)>, Option<String>),
+    // params contains additional parameters
+    // add additional parameters to an action by inserting
+    // a string key with a f32 value
+    params: Option<HashMap<String, f32>>,
 }
 
 impl Default for Action {
@@ -295,6 +299,7 @@ impl Default for Action {
         Action {
             action_type: ActionType::Empty,
             target: (None, None),
+            params: None,
         }
     }
 }
@@ -632,6 +637,7 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain, &mut Ve
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Move,
                     target: (Some(command.move_to), None),
+                    params: None,
                 });
             },
             CommandType::Attack => {
@@ -639,11 +645,18 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain, &mut Ve
                 actions.current_action = Action::default();
                 actions.action_queue.clear();
 
+                let mut params = HashMap::new();
+                // range refers to the maximum range at which an attack can be launched
+                params.insert("range".to_string(), 40.0);
+                // min_range refers to the minimum range at which an attack can be launched
+                params.insert("min_range".to_string(), 20.0);
+
                 // add move action to the target entity
                 // get within a certain distance of the target
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Track,
                     target: (None, Some(command.target.clone())),
+                    params: Some(params),
                 });
 
                 // add attack action
@@ -651,6 +664,7 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain, &mut Ve
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Attack,
                     target: (None, Some(command.target.clone())),
+                    params: None,
                 });
             }
             _ => {
@@ -905,6 +919,65 @@ fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity, &mu
                     }
                 }
 
+                // these parameters are technically optional, however
+                // if not defined the attack range will be 0
+                // range defaults to None
+                let mut range = None;
+                // min_range defaults to None
+                let mut min_range = None;
+
+                // check if additional parameters were passed in with the action
+                if let Some(params) = &action.params {
+                    // get range parameter from hashmap
+                    range = params.get("range");
+                    // get min_range parameter from hashmap
+                    min_range = params.get("min_range");
+                }
+
+                // check if range greater than 0
+                if let Some(&range) = range {
+                    // get vector to target from current position
+                    let target_vector = Vec2::new(target_pos.0 - pos.0, target_pos.1 - pos.1);    
+                    // get distance between two points
+                    let dist = target_vector.length();
+                    // get normalized target vector
+                    let target_dir = target_vector.normalize();
+                    // check if min_range was specified
+                    if let Some(&min_range) = min_range {
+                        // if minimum range to launch the attack is greater than the maximmum range
+                        // then give an error -> this needs to be handled and the action skipped
+                        // but the player must also get a notification that this is an invalid action
+                        if min_range > range {
+                            // current behaviour causes the program to panic
+                            panic!("min_range > range, need to implement warning system visible to players")
+                        }
+                        // check if the entity is within the minimum range to launch the attack
+                        if dist < min_range {
+                            // if so
+                            // get new target vector to appropriate range
+                            let new_target_vector = target_dir * (dist - min_range);
+                            // add target vector to current position vector to get
+                            // the target coordinate
+                            let edge_vector = new_target_vector + Vec2::new(pos.0, pos.1);
+                            // update the target coordinates
+                            target_pos.0 = edge_vector[0];
+                            target_pos.1 = edge_vector[1];
+                        }    
+                    }
+                    // check if the entity is beyond the maximum range to launch the attack
+                    if dist > range {
+                        // if so
+                        // get new target vector to appropriate range
+                        let new_target_vector = target_dir * (dist - range);
+                        // add target vector to current position vector to get 
+                        // the target coordinate
+                        let edge_vector = new_target_vector + Vec2::new(pos.0, pos.1);
+                        // update the target coordinates
+                        target_pos.0 = edge_vector[0];
+                        target_pos.1 = edge_vector[1];
+                    }
+                    
+                }
 
                 // get the distance vector from the player to the move point
                 let dist_vector = Vec2::new(target_pos.0 - pos.0, target_pos.1 - pos.1);
