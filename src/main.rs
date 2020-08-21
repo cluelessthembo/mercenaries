@@ -13,6 +13,8 @@ use ezing;
 use uuid::Uuid;
 // imports for data structures
 use std::collections::{VecDeque, HashMap};
+// imports for random number generator
+use rand::Rng;
 struct Id(String);
 
 impl Id {
@@ -69,9 +71,11 @@ fn main() {
     .add_plugin(MovingPlugin)
     // add in the player control plugin
     .add_plugin(ControlPlugin)
-    // add in the AI plugin
+    // add in the actions plugin - lower level of control for entities
     .add_plugin(ActionsPlugin)
+    // add in the animations plugin
     .add_plugin(AnimationPlugin)
+    .add_plugin(BrainPlugin)
     // run the app
     .run();
 }
@@ -245,19 +249,19 @@ struct Command {
     // move_to is the target coordinate, if it exists
     move_to: (f32, f32),
 }
-// Brain component
+// Nerve component
 // holds the current action as well as succeeding actions
-struct Brain {
+struct Nerve {
     // current action is the action being worked on
     current_action: Action,
     // action queue holds the next actions, after the current one
     action_queue: VecDeque<Action>,
 }
 
-impl Brain {
-    // function to initialise a new Brain component
+impl Nerve {
+    // function to initialise a new Nerve component
     fn new() -> Self {
-        Brain {
+        Nerve {
             // initialise with an empty action
             current_action: Action::default(),
             // initialise with an empty action queue
@@ -397,7 +401,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Velocity(0.0, 0.0))
         // spawn controlled component along with so that this entity is controlled by the player
         .with(Controlled::new(0))
-        .with(Brain::new())
+        .with(Nerve::new())
         .with(Size(5.0, 5.0))
 
         .with(get_player_sprite_template(&mut materials))
@@ -413,9 +417,9 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Position(800.0, 500.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(1))
-        .with(Brain::new())
+        .with(Nerve::new())
         .with(Size(5.0, 5.0))
-
+        .with(Brain)
         .with(get_squadmate_sprite_template(&mut materials))
 
         .spawn(
@@ -427,9 +431,9 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Position(600.0, 100.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(2))
-        .with(Brain::new())
+        .with(Nerve::new())
         .with(Size(5.0, 5.0))
-
+        .with(Brain)
         .with(get_squadmate_sprite_template(&mut materials))
 
         .spawn(
@@ -441,9 +445,9 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Position(1000.0, 300.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(3))
-        .with(Brain::new())
+        .with(Nerve::new())
         .with(Size(5.0, 5.0))
-
+        .with(Brain)
         .with(get_squadmate_sprite_template(&mut materials))
         ;
 }
@@ -486,8 +490,10 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         .with(Velocity(0.0, 0.0))
         // spawn along the hostile component so that this entity is considered hostile to the player
         .with(Hostile)
-        .with(Brain::new())
+        .with(Nerve::new())
         .with(Size(5.0, 5.0))
+        .with(Brain)
+        .with(get_hostile_sprite_template(&mut materials))
         // repeat for another hostile entity
         .spawn(
             SimpleRect::new(black_handle, Vec2::new(10.0, 10.0)),
@@ -497,8 +503,10 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         .with(Position(400.0, 200.0))
         .with(Velocity(0.0, 0.0))
         .with(Hostile)
-        .with(Brain::new())
+        .with(Nerve::new())
         .with(Size(5.0, 5.0))
+        .with(Brain)
+        .with(get_hostile_sprite_template(&mut materials))
         ;
 }
 // control plugin
@@ -623,8 +631,7 @@ fn keyboard_input_system(mut inputs: ResMut<InputState>, mut state: ResMut<Keybo
 // move controlled system
 // responsible for calculating the velocity vector of the player to get to
 // the desired move point and setting the player character's velocity
-fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain)>) {
-    let ADJUSTMENT_CONSTANT = 10.0;
+fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Nerve)>) {
     for (mut state, mut actions) in &mut query.iter() {
         let command = &state.current_command;
         
@@ -892,7 +899,7 @@ fn close_enough (x: f32, y: f32, enough: f32) -> bool {
 
 // run action system
 // responsible for implementing the various actions used for lower level control of entities
-fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity, &mut SpriteData)>, mut ent_query: Query<(&Id, &Position)>) {
+fn run_action_system(mut query: Query<(&mut Nerve, &Position, &mut Velocity, &mut SpriteData)>, mut ent_query: Query<(&Id, &Position)>) {
     // go through all entities with a brain, position, and velocity
     for (mut actions, pos, mut vel, mut sprite) in &mut query.iter() {
         // get the current action
@@ -1472,4 +1479,83 @@ fn get_squadmate_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) 
     template.add_move_frame(SimpleRect::new(move_four_handle, Vec2::new(10.0, 10.0)));
 
     template
+}
+
+fn get_hostile_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) -> SpriteData {
+    let mut template = SpriteData::new();
+    
+    let idle_one_handle = materials.add(Color::BLACK.into());
+    let idle_two_handle = materials.add(Color::rgb(0.1, 0.1, 0.1).into());
+    let idle_three_handle = materials.add(Color::rgb(0.25, 0.25, 0.25).into());
+    let idle_four_handle = materials.add(Color::rgb(0.1, 0.1, 0.1).into());
+    
+    let attack_one_handle = materials.add(Color::rgb(1.0, 0.0, 0.0).into());
+    let attack_two_handle = materials.add(Color::rgb(0.75, 0.25, 0.25).into());
+    let attack_three_handle = materials.add(Color::rgb(0.5, 0.5, 0.5).into());
+    let attack_four_handle = materials.add(Color::rgb(0.0, 0.0, 0.0).into());    
+    
+    let move_one_handle = materials.add(Color::BLACK.into());
+    let move_two_handle = materials.add(Color::rgb(0.25, 0.0, 0.25).into());
+    let move_three_handle = materials.add(Color::rgb(0.5, 0.0, 0.5).into());
+    let move_four_handle = materials.add(Color::rgb(0.25, 0.0, 0.25).into());
+
+    template.add_idle_frame(SimpleRect::new(idle_one_handle, Vec2::new(10.0, 10.0)));
+    template.add_idle_frame(SimpleRect::new(idle_two_handle, Vec2::new(10.0, 10.0)));
+    template.add_idle_frame(SimpleRect::new(idle_three_handle, Vec2::new(10.0, 10.0)));
+    template.add_idle_frame(SimpleRect::new(idle_four_handle, Vec2::new(10.0, 10.0)));
+    
+    template.add_attack_frame(SimpleRect::new(attack_one_handle, Vec2::new(10.0, 10.0)));
+    template.add_attack_frame(SimpleRect::new(attack_two_handle, Vec2::new(10.0, 10.0)));
+    template.add_attack_frame(SimpleRect::new(attack_three_handle, Vec2::new(10.0, 10.0)));
+    template.add_attack_frame(SimpleRect::new(attack_four_handle, Vec2::new(10.0, 10.0)));
+
+    template.add_move_frame(SimpleRect::new(move_one_handle, Vec2::new(10.0, 10.0)));
+    template.add_move_frame(SimpleRect::new(move_two_handle, Vec2::new(10.0, 10.0)));
+    template.add_move_frame(SimpleRect::new(move_three_handle, Vec2::new(10.0, 10.0)));
+    template.add_move_frame(SimpleRect::new(move_four_handle, Vec2::new(10.0, 10.0)));
+
+    template
+}
+
+struct BrainPlugin;
+
+impl Plugin for BrainPlugin {
+    fn build(&self, app: &mut AppBuilder){
+        app.add_system(simple_idle_system.system());     
+    }
+}
+
+struct Brain;
+
+// simple idle system
+// allows AI actors to wander around aimlessly
+// will probably be replaced, reworked or at least renamed
+fn simple_idle_system(mut query: Query<(&Brain, &mut Nerve, &Position)>) {
+    let mut rng = rand::thread_rng();
+
+    for (_control, mut actions, pos) in &mut query.iter() {
+        
+        if rng.gen::<f32>() < 0.99 {
+            continue;
+        }
+
+        match (actions.current_action.action_type, actions.action_queue.front()) {
+            (ActionType::Empty, None) => {
+                let rand_x = rng.gen::<f32>() * 200.0 - rng.gen::<f32>() * 200.0;
+                let rand_y = rng.gen::<f32>() * 200.0 - rng.gen::<f32>() * 200.0;
+                
+                let loiter_x = (rand_x + pos.0).max(0.0).min(1600.0);
+                let loiter_y = (rand_y + pos.1).max(0.0).min(900.0);
+
+                actions.action_queue.push_back(Action {
+                    action_type: ActionType::Move,
+                    target: (Some((loiter_x, loiter_y)), None),
+                    params: None,
+                });
+            }
+            _ => {
+
+            }     
+        }
+    }
 }
