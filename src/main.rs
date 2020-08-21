@@ -979,35 +979,57 @@ fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity, &mu
     }
 }
 
+// animation plugin
+// responsible for running the appropriate animation
 struct AnimationPlugin;
 
+// boilerplate code for plugin implementation
 impl Plugin for AnimationPlugin {
     fn build(&self, app: &mut AppBuilder) {
+        // add frame rate regulator
         app.add_resource(AnimationFrameRate::new())
-            .add_system(animate_system.system());
+        // add animate system    
+        .add_system(animate_system.system());
     }
 }
 
+// animation type enum
+// should correspond to the different animation types we want
 enum AnimationType {
     Attack,
     Move,
     Idle,
 }
 
+// sprite data component
+// this allows for storage of frames and animation type
+// and should be spawned along with any sprite that has animation
 struct SpriteData {
+    // animation type informs what animation should be run
     animation_type: AnimationType,
 
+    // move frames contain the frames used when the sprite is moving
     move_frames: Vec<SpriteComponents>,
+    // move frame index holds where the move animation currently is
     move_frame_index: usize,
 
+    // idle frames contain the frames used when idling/the default
+    // animation used
     idle_frames: Vec<SpriteComponents>,
+    // idle frame index holds where the idle animation currently is
     idle_frame_index: usize,
 
+    // attack frames contain the frames used when attacking
     attack_frames: Vec<SpriteComponents>,
+    // attack frame index holds where the attack animation currently is
     attack_frame_index: usize,
 }
 
+// implementation for sprite data component
 impl SpriteData {
+    // new function provides an empty sprite data
+    // set automatically to idle
+    // note that frames need to be added for this component to work
     fn new() -> Self {
         SpriteData {
             animation_type: AnimationType::Idle,
@@ -1023,12 +1045,19 @@ impl SpriteData {
         }
     }
 
+    // add move frame
+    // this function adds a frame (sprite) to the sprite data's move animation
     fn add_move_frame(&mut self, sprite: SpriteComponents) {
         self.move_frames.push(sprite);
     }
+    // reset move animation
+    // this function resets the move animation
     fn reset_move_animation(&mut self) {
         self.move_frame_index = 0;
     }
+    // get move frame
+    // this function gets the next frame for the move animation
+    // it will also automatically reset the other animations
     fn get_move_frame(&mut self) -> SpriteComponents {
         // reset frame index for other animations
         self.reset_idle_animation();
@@ -1050,13 +1079,19 @@ impl SpriteData {
         }
     }
 
-
+    // add idle frame
+    // this function adds a frame (sprite) to the sprite data's idle animation 
     fn add_idle_frame(&mut self, sprite: SpriteComponents) {
         self.idle_frames.push(sprite);
     }
+    // reset idle animation
+    // this function resets the idle animation
     fn reset_idle_animation(&mut self) {
         self.idle_frame_index = 0;
     }
+    // get idle frame
+    // this function gets the next frame for the idle animation
+    // it will also automatically reset the other animations
     fn get_idle_frame(&mut self) -> SpriteComponents {
         // reset frame index for other animations
         self.reset_attack_animation();
@@ -1078,13 +1113,19 @@ impl SpriteData {
         }
     }
 
-
+    // add attack frame
+    // this function adds a frame (sprite) to the sprite data's attack animation 
     fn add_attack_frame(&mut self, sprite: SpriteComponents) {
         self.attack_frames.push(sprite);
     }
+    // reset attack animation
+    // this function resets the attack animation
     fn reset_attack_animation(&mut self) {
         self.attack_frame_index = 0;
     }
+    // get attack frame
+    // this function gets the next frame for the attack animation
+    // it will also automatically reset the other animations
     fn get_attack_frame(&mut self) -> SpriteComponents {
         // reset frame index for other animations
         self.reset_idle_animation();
@@ -1107,33 +1148,54 @@ impl SpriteData {
     }
 }
 
+// animation frame rate struct
+// this struct contains a timer that is
+// used to regulate the framerate of animations
+// this means that the framerate of animations is potentially separate from
+// the overall framerate of the game! (potential issue)
 struct AnimationFrameRate(Timer);
 
+// implementation for the animation frame rate struct
 impl AnimationFrameRate {
+    // gives a new animation frame rate struct, automatically set to a
+    // default frame rate
     fn new() -> Self {
-        // 24fps per second animation frame rate
+        // 6fps per second animation frame rate
         AnimationFrameRate(Timer::from_seconds(4.0 / 24.0))
+    }
+    // generates a new animation frame rate struct from a given fps
+    // fps refers to the desired number of frames per second
+    fn from_frame_rate(fps: f32) -> Self {
+        AnimationFrameRate(Timer::from_seconds(1.0 / fps))
     }
 }
 
+// animate system
+// responsible for playing the appropriate animations for each sprite
 fn animate_system(time: Res<Time>, mut timer: ResMut<AnimationFrameRate>, mut query: Query<(&mut Handle<ColorMaterial>, &mut Sprite, &mut SpriteData)>) {
     // tick up on animation frame rate timer
     timer.0.tick(time.delta_seconds);
         
     // check if it's time for a new animation frame
     if timer.0.finished {
+        // go through all sprites and get then assign new frames
         for (mut material, mut sprite, mut frames) in &mut query.iter() {    
+            // sprite frame is defaulted to None
             let mut sprite_frame: Option<SpriteComponents> = None;
 
+            // check animation type for current sprite
             match frames.animation_type {
+                // if attack animation
                 AnimationType::Attack => {
                     // get the next attack frame
                     sprite_frame = Some(frames.get_attack_frame());
                 },
+                // if move animation
                 AnimationType::Move => {
                     // get the next move frame
                     sprite_frame = Some(frames.get_move_frame());
                 },
+                // if idle animation
                 AnimationType::Idle => {
                     // get the next idle frame
                     sprite_frame = Some(frames.get_idle_frame());
@@ -1146,10 +1208,15 @@ fn animate_system(time: Res<Time>, mut timer: ResMut<AnimationFrameRate>, mut qu
                 *sprite = frame.sprite;
             }
         }
+        // reset frame timer
         timer.0.reset();
     }
 }
 
+// get player sprite template
+// gives the template sprite for the player
+// right now mostly just used for testing animation system
+// actual method of getting player sprite may vary
 fn get_player_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) -> SpriteData {
     let mut template = SpriteData::new();
     
@@ -1186,6 +1253,10 @@ fn get_player_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) -> 
     template
 }
 
+// get squadmate sprite template
+// gives the template sprite for squadmates
+// right now only used to test animation system
+// actual method of getting squadmate sprites may vary
 fn get_squadmate_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) -> SpriteData {
     let mut template = SpriteData::new();
     
