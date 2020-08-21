@@ -267,7 +267,7 @@ impl Brain {
 }
 
 // enum for the type of action 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum ActionType {
     // move actions will move entities to a stationary point
     Move,
@@ -281,7 +281,7 @@ enum ActionType {
 }
 
 // action struct
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Action {
     action_type: ActionType,
     // target is either a coordinate point or an entity id
@@ -623,8 +623,9 @@ fn keyboard_input_system(mut inputs: ResMut<InputState>, mut state: ResMut<Keybo
 // move controlled system
 // responsible for calculating the velocity vector of the player to get to
 // the desired move point and setting the player character's velocity
-fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain, &mut Velocity, &Position)>) {
-    for (mut state, mut actions, mut vel, pos) in &mut query.iter() {
+fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain)>) {
+    let ADJUSTMENT_CONSTANT = 10.0;
+    for (mut state, mut actions) in &mut query.iter() {
         let command = &state.current_command;
         
         match command.command_type {
@@ -656,7 +657,7 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain, &mut Ve
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Track,
                     target: (None, Some(command.target.clone())),
-                    params: Some(params),
+                    params: Some(params.clone()),
                 });
 
                 // add attack action
@@ -664,7 +665,7 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Brain, &mut Ve
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Attack,
                     target: (None, Some(command.target.clone())),
-                    params: None,
+                    params: Some(params),
                 });
             }
             _ => {
@@ -839,13 +840,63 @@ impl Plugin for ActionsPlugin {
     }
 }
 
+fn get_straightline_velocity(target: (f32, f32), curr: (f32, f32)) -> Vec2 {
+    // get the distance vector from the player to the move point
+    let dist_vector = Vec2::new(target.0 - curr.0, target.1 - curr.1);
+    // the length of the distance vector is the distance between the two points
+    let dist = dist_vector.length();
+    // if distance is 0 then the velocity vector is 0
+    let mut new_vel = Vec2::new(0.0, 0.0);
+    // otherwise if distance is greater than 0
+    if dist > 0.0 {
+        // divide the distance by the distance factor and cap at 1.0
+        let ease_input = (dist / (2.75 * 50.0)).min(1.0);
+
+        // new velocity vector is a rescaled exponential applied to the normalized distance vector
+        // the result is that speed is based on distance and varies according to an exponential curve
+        // and the velocity is always towards the move point
+        // if pathfinding is implemented for the player, then this will need to be changed
+        new_vel = ezing::expo_out( ease_input ) * (2.75 * 50.0) * dist_vector.normalize();
+    }
+
+    // if the new x-velocity has insignificant magnitude,
+    // just set x-vel to the distance to target x
+    // this is to avoid sliding
+    if new_vel[0].abs() < 1.0 {
+        new_vel[0] = dist_vector[0];        
+    }
+    // if the new y-velocity has insignificant magnitude,
+    // just set y-vel to the distance to target y
+    // this is to avoid sliding
+    if new_vel[1].abs() < 1.0 {
+        new_vel[1] = dist_vector[1];
+    }
+    
+    new_vel
+}
+
+// close enough function
+// checks if two floats are within a certain threshold of each other
+// this function should be used whenever we want to measure distances and 
+// establish distance thresholds, due to the way that velocity and moving 
+// is implemented. otherwise, we have an achilles and the tortoise situation
+// where an entity will asymptotically approach a border but never actually 
+// reach it
+fn close_enough (x: f32, y: f32, enough: f32) -> bool {
+    if (x - y).abs() < enough {
+        true
+    }else{
+        false
+    }
+}
+
 // run action system
 // responsible for implementing the various actions used for lower level control of entities
 fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity, &mut SpriteData)>, mut ent_query: Query<(&Id, &Position)>) {
     // go through all entities with a brain, position, and velocity
     for (mut actions, pos, mut vel, mut sprite) in &mut query.iter() {
         // get the current action
-        let action = &actions.current_action;
+        let action = actions.current_action.clone();
 
         // check the action type
         match action.action_type {
@@ -854,41 +905,14 @@ fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity, &mu
 
                 sprite.animation_type = AnimationType::Move;
 
-                // get the distance vector from the player to the move point
-                let dist_vector = Vec2::new(action.target.0.unwrap().0 - pos.0, action.target.0.unwrap().1 - pos.1);
-                // the length of the distance vector is the distance between the two points
-                let dist = dist_vector.length();
-                // if distance is 0 then the velocity vector is 0
-                let mut new_vel = Vec2::new(0.0, 0.0);
-                // otherwise if distance is greater than 0
-                if dist > 0.0 {
-                    // divide the distance by the distance factor and cap at 1.0
-                    let ease_input = (dist / (2.75 * 50.0)).min(1.0);
-
-                    // new velocity vector is a rescaled exponential applied to the normalized distance vector
-                    // the result is that speed is based on distance and varies according to an exponential curve
-                    // and the velocity is always towards the move point
-                    // if pathfinding is implemented for the player, then this will need to be changed
-                    new_vel = ezing::expo_out( ease_input ) * (2.75 * 50.0) * dist_vector.normalize();
-                }
-                // if the new x-velocity has insignificant magnitude,
-                // reduce it to 0
-                // this is to avoid sliding
-                if new_vel[0].abs() < 1.0 {
-                    new_vel[0] = 0.0;            
-                }
-                // if the new y-velocity has insignificant magnitude,
-                // reduce it to 0
-                // this is to avoid sliding
-                if new_vel[1].abs() < 1.0 {
-                    new_vel[1] = 0.0;
-                }
+                let new_vel = get_straightline_velocity(action.target.0.unwrap(), (pos.0, pos.1));
+                
                 // set the velocity vector to use the new velocity vector
                 vel.0 = new_vel[0];
                 vel.1 = new_vel[1];
 
                 // if no longer moving
-                if vel.0 == 0.0 && vel.1 == 0.0 {
+                if vel.0.abs() < 1.0 && vel.1.abs() < 1.0 {
                     // pop actions queue and ready next action
                     // check if there are still actions in the action queue
                     if let Some(action) = actions.action_queue.pop_front() {
@@ -934,7 +958,7 @@ fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity, &mu
                     min_range = params.get("min_range");
                 }
 
-                // check if range greater than 0
+                // check if range was specified
                 if let Some(&range) = range {
                     // get vector to target from current position
                     let target_vector = Vec2::new(target_pos.0 - pos.0, target_pos.1 - pos.1);    
@@ -979,41 +1003,15 @@ fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity, &mu
                     
                 }
 
-                // get the distance vector from the player to the move point
-                let dist_vector = Vec2::new(target_pos.0 - pos.0, target_pos.1 - pos.1);
-                // the length of the distance vector is the distance between the two points
-                let dist = dist_vector.length();
-                // if distance is 0 then the velocity vector is 0
-                let mut new_vel = Vec2::new(0.0, 0.0);
-                // otherwise if distance is greater than 0
-                if dist > 0.0 {
-                    // divide the distance by the distance factor and cap at 1.0
-                    let ease_input = (dist / (2.75 * 50.0)).min(1.0);
 
-                    // new velocity vector is a rescaled exponential applied to the normalized distance vector
-                    // the result is that speed is based on distance and varies according to an exponential curve
-                    // and the velocity is always towards the move point
-                    // if pathfinding is implemented for the player, then this will need to be changed
-                    new_vel = ezing::expo_out( ease_input ) * (2.75 * 50.0) * dist_vector.normalize();
-                }
-                // if the new x-velocity has insignificant magnitude,
-                // reduce it to 0
-                // this is to avoid sliding
-                if new_vel[0].abs() < 1.0 {
-                    new_vel[0] = 0.0;            
-                }
-                // if the new y-velocity has insignificant magnitude,
-                // reduce it to 0
-                // this is to avoid sliding
-                if new_vel[1].abs() < 1.0 {
-                    new_vel[1] = 0.0;
-                }
+                let new_vel = get_straightline_velocity(target_pos, (pos.0, pos.1));
+                
                 // set the velocity vector to use the new velocity vector
                 vel.0 = new_vel[0];
                 vel.1 = new_vel[1];
 
                 // if no longer moving (probably at destination)
-                if vel.0 == 0.0 && vel.1 == 0.0 {
+                if vel.0.abs() < 1.0 && vel.1.abs() < 1.0 {
                     // pop actions queue and ready next action
                     // check if there are still actions in the action queue
                     if let Some(action) = actions.action_queue.pop_front() {
@@ -1029,11 +1027,121 @@ fn run_action_system(mut query: Query<(&mut Brain, &Position, &mut Velocity, &mu
             },
             // attack actions will attack a targeted entity
             ActionType::Attack => {
-                // currently attacking does nothing but print out that you're attacking
+                // set to use attack animation
                 sprite.animation_type = AnimationType::Attack;
+
+                // update target position
+                let mut target_pos = (f32::NAN, f32::NAN);
+
+                // go through entities and find the correct position component
+                for (id, pos) in &mut ent_query.iter() {
+                    // check if the id matches
+                    if *action.target.1.as_ref().unwrap() == id.id() {
+                        // set the target position
+                        target_pos = (pos.0, pos.1);
+                    }
+                }
+
+                // these parameters are technically optional, however
+                // if not defined the attack will never go out of range
+                // range defaults to None
+                let mut range = None;
+                // min_range defaults to None
+                let mut min_range = None;
+
+                // check if additional parameters were passed in with the action
+                if let Some(params) = &action.params {
+                    // get range parameter from hashmap
+                    range = params.get("range");
+                    // get min_range parameter from hashmap
+                    min_range = params.get("min_range");
+                }
+
+                // reattach flag, indicates whether or not
+                // the attacker needs to enter optimal range again
+                let mut reattach = false;
+
+                // check if range was specified
+                if let Some(&range) = range {
+                    // get the distance vector from the player to the move point
+                    let dist_vector = Vec2::new(target_pos.0 - pos.0, target_pos.1 - pos.1);
+                    // the length of the distance vector is the distance between the two points
+                    let dist = dist_vector.length();
+                    // check if min_range was specified
+                    if let Some(&min_range) = min_range {
+                        // if minimum range to launch the attack is greater than the maximmum range
+                        // then give an error -> this needs to be handled and the action skipped
+                        // but the player must also get a notification that this is an invalid action
+                        if min_range > range {
+                            // current behaviour causes the program to panic
+                            panic!("min_range > range, need to implement warning system visible to players")
+                        }
+                        // check if the entity is within the minimum range to launch the attack
+                        // additional check to see if entity is barely on the border for minimum
+                        // range - this is here because of the way that velocity is implemented
+                        // we have an achilles and the tortoise type situation that makes it 
+                        // difficult to actually get the entity exactly at the target point
+                        if dist < min_range && !close_enough(dist, min_range, 1.0) {
+                            // if so
+                            // flag for reattachment
+                            reattach = true;
+                        }    
+                    }
+                    // check if the entity is beyond the maximum range to launch the attack
+                    // additional check to see if entity is barely on the border for maximum
+                    // range - this is here because of the way that velocity is implemented
+                    // we have an achilles and the tortoise type situation that makes it 
+                    // difficult to actually get the entity exactly at the target point
+                    if dist > range && !close_enough(dist, range, 1.0) {
+                        // if so
+                        // flag for reattachment
+                        reattach = true;
+                    }
+                }
+
+                // check if flagged for reattachment
+                if reattach {
+                    // if so
+                    // check the front of the action queue
+                    match actions.action_queue.front() {
+                        // if action queue is empty
+                        None => {
+                            // retrack target
+                            actions.action_queue.push_back(Action {
+                                action_type: ActionType::Track,
+                                target: action.target.clone(),
+                                params: action.params.clone(),
+                            });
+                            // attack target once target is tracked
+                            actions.action_queue.push_back(Action {
+                                action_type: ActionType::Attack,
+                                target: action.target.clone(),
+                                params: action.params.clone(),
+                            });
+
+                            // pop current action and move to next
+                            if let Some(action) = actions.action_queue.pop_front() {
+                                // if there are still more actions
+                                // set the next action to be the current action
+                                actions.current_action = action;
+                            }else{
+                                // if there are no more actions in the action queue
+                                // set the current action to be the empty action
+                                actions.current_action = Action::default();
+                            }
+                        },
+                        // otherwise
+                        _ => {
+                            // if there are still actions in the queue
+                            // assume that they override pressing the attack
+                        }
+                    }
+                }
+
             },
             // empty actions do nothing
             ActionType::Empty => {
+                // set to use idle animation
                 sprite.animation_type = AnimationType::Idle;
                 // empty actions do nothing, immediately move to the next
                 // pop actions queue and ready next action
