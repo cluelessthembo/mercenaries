@@ -15,14 +15,24 @@ use uuid::Uuid;
 use std::collections::{VecDeque, HashMap};
 // imports for random number generator
 use rand::Rng;
+// id component
+// this should be spawned along side every entity
+// it is responsible for keeping the unique id of each entity
+// it is essentially impossible to keep track of an entity otherwise
+// note that bevy has its own id system for entities but it uses a u32 id
+// which carries the risk of collision
 struct Id(String);
 
+// id component implementation
 impl Id {
+    // new function generates new uuid
     fn new() -> Self {
         Id(
+            // uuid removes all hyphens 
             Uuid::new_v4().to_simple().to_string()
         )
     }
+    // id function returns id as a string
     fn id(&self) -> String {
         self.0.clone()
     }
