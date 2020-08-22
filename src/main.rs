@@ -245,9 +245,9 @@ struct Command {
     // requires a command type
     command_type: CommandType,
     // target is the id of the target entity, if it exists
-    target: String,
-    // move_to is the target coordinate, if it exists
-    move_to: (f32, f32),
+    target_id: Option<String>,
+    // point is the target coordinate, if it exists
+    target_point: Option<(f32, f32)>,
 }
 // Nerve component
 // holds the current action as well as succeeding actions
@@ -410,7 +410,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         // spawn controlled component along with so that this entity is controlled by the player
         .with(Controlled::new(0))
         .with(Nerve::new())
-        .with(Size(5.0, 5.0))
+        .with(Size(10.0, 10.0))
 
         .with(get_player_sprite_template(&mut materials))
         // same deal for the other three persons
@@ -426,7 +426,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(1))
         .with(Nerve::new())
-        .with(Size(5.0, 5.0))
+        .with(Size(10.0, 10.0))
         .with(Brain)
         .with(get_squadmate_sprite_template(&mut materials))
 
@@ -440,7 +440,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(2))
         .with(Nerve::new())
-        .with(Size(5.0, 5.0))
+        .with(Size(10.0, 10.0))
         .with(Brain)
         .with(get_squadmate_sprite_template(&mut materials))
 
@@ -454,7 +454,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(3))
         .with(Nerve::new())
-        .with(Size(5.0, 5.0))
+        .with(Size(10.0, 10.0))
         .with(Brain)
         .with(get_squadmate_sprite_template(&mut materials))
         ;
@@ -499,7 +499,7 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         // spawn along the hostile component so that this entity is considered hostile to the player
         .with(Hostile)
         .with(Nerve::new())
-        .with(Size(5.0, 5.0))
+        .with(Size(10.0, 10.0))
         .with(Brain)
         .with(get_hostile_sprite_template(&mut materials))
         // repeat for another hostile entity
@@ -512,7 +512,7 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         .with(Velocity(0.0, 0.0))
         .with(Hostile)
         .with(Nerve::new())
-        .with(Size(5.0, 5.0))
+        .with(Size(10.0, 10.0))
         .with(Brain)
         .with(get_hostile_sprite_template(&mut materials))
         ;
@@ -652,7 +652,7 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Nerve)>) {
                 // add move action to the target location
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Move,
-                    target: (Some(command.move_to), None),
+                    target: (command.target_point, None),
                     params: None,
                 });
             },
@@ -671,7 +671,7 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Nerve)>) {
                 // get within a certain distance of the target
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Move,
-                    target: (None, Some(command.target.clone())),
+                    target: (None, command.target_id.clone()),
                     params: Some(params.clone()),
                 });
 
@@ -679,10 +679,28 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Nerve)>) {
                 // attack the target
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Attack,
-                    target: (None, Some(command.target.clone())),
+                    target: (None, command.target_id.clone()),
                     params: Some(params),
                 });
-            }
+            },
+            CommandType::Flee => {
+                // clear current actions to replace with new actions
+                actions.current_action = Action::default();
+                actions.action_queue.clear();
+
+                let mut params = HashMap::new();
+                // min_range refers to the minimum distance that we want to put between
+                // us and the point/entity
+                params.insert("min_range".to_string(), 200.0);
+
+                // add move action to the target entity
+                // get away from a certain distance of the target
+                actions.action_queue.push_back(Action {
+                    action_type: ActionType::Move,
+                    target: (command.target_point, command.target_id.clone()),
+                    params: Some(params.clone()),
+                });
+            },
             _ => {
 
             },
@@ -722,8 +740,9 @@ fn convert_keycode_to_squad_pos(key: KeyCode) -> i32 {
 // this function checks if a point is in the a box at a certain position with a certain 'radius'
 // point is the coordinate being checked
 // box_position is the coordinate where the box is
-// box_radius is the distance the edges are from box_position
-fn check_point_collision(point: (f32, f32), box_position: (f32, f32), box_radius: (f32, f32)) -> bool {
+// box_size is the size of the box
+fn check_point_collision(point: (f32, f32), box_position: (f32, f32), box_size: (f32, f32)) -> bool {
+    let box_radius = (box_size.0 / 2.0, box_size.1 / 2.0);
     if (point.0 < box_position.0 + box_radius.0) && (point.0 > box_position.0 - box_radius.0)
         && (point.1 < box_position.1 + box_radius.1) && (point.1 > box_position.1 - box_radius.1) {
         true
@@ -739,6 +758,8 @@ enum CommandType {
     Move,
     // attack command orders a pawn to attack a certain entity
     Attack,
+    // flee command orders a pawn to move a certain distance away from a certain entity/spot
+    Flee,    
     // empty command does nothing
     Empty,
 }
@@ -762,7 +783,7 @@ fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut C
         // if the left mouse button was clicked, default to a move command
         let mut command_type = CommandType::Move;
         // a move command by default has no target entity
-        let mut target_entity = "null".to_string();
+        let mut target_entity = None;
 
         // check if you clicked on something
         for (id, _host, pos, size) in &mut hostiles.iter() {
@@ -772,10 +793,15 @@ fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut C
                 // switch command type to an attack type    
                 command_type = CommandType::Attack;
                 // set the target entity to the entity clicked
-                target_entity = id.id();
+                target_entity = Some(id.id());
                 // once target entity is found, break out of the loop
                 break;
             }
+        }
+
+        // check hotkeys pressed
+        if inputs.key_presses.contains(&KeyCode::LShift) {
+            command_type = CommandType::Flee;
         }
         
         // squad_control vector contains all the squad indices being ordered
@@ -812,8 +838,8 @@ fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut C
                         // towards the cursor position
                         state.current_command = Command {
                             command_type: command_type,
-                            move_to: inputs.mouse_position.clone(),
-                            target: "null".to_string(),
+                            target_point: Some(inputs.mouse_position.clone()),
+                            target_id: None,
                         };
                     },
                     // if the command type is attack
@@ -822,8 +848,18 @@ fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut C
                         // at the entity clicked
                         state.current_command = Command {
                             command_type: command_type,
-                            move_to: (f32::NAN, f32::NAN),
-                            target: target_entity.clone(),
+                            target_point: None,
+                            target_id: target_entity.clone(),
+                        };
+                    },
+                    // if the command type is flee
+                    CommandType::Flee => {
+                        // set the current command to a flee type command
+                        // at what is clicked
+                        state.current_command = Command {
+                            command_type: command_type,
+                            target_point: Some(inputs.mouse_position.clone()),
+                            target_id: target_entity.clone(),
                         };
                     },
                     // if the command type is empty
@@ -831,9 +867,12 @@ fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut C
                         // set the current command to an empty type command
                         state.current_command = Command {
                             command_type: command_type,
-                            move_to: (f32::NAN, f32::NAN),
-                            target: "null".to_string(),
+                            target_point: None,
+                            target_id: None,
                         }
+                    },
+                    _ => {
+
                     },
                 }
                 
@@ -923,7 +962,7 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                 let mut move_to = (f32::NAN, f32::NAN);
 
                 match action.target {
-                    (None, Some(id)) => {
+                    (_, Some(id)) => {
                         for (eid, pos) in &mut ent_query.iter() {
                             // check if the id matches
                             if id == eid.id() {
@@ -932,7 +971,7 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                             }
                         }
                     },
-                    (Some(target), _) => {
+                    (Some(target), None) => {
                         move_to = target;
                     },
                     (None, None) => {
@@ -957,16 +996,9 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                     // get min_range parameter from hashmap
                     min_range = params.get("min_range");
                 }
-
-                // check if range was specified
+                
+                // check for parameter relational validity
                 if let Some(&range) = range {
-                    // get vector to target from current position
-                    let target_vector = Vec2::new(move_to.0 - pos.0, move_to.1 - pos.1);    
-                    // get distance between two points
-                    let dist = target_vector.length();
-                    // get normalized target vector
-                    let target_dir = target_vector.normalize();
-                    // check if min_range was specified
                     if let Some(&min_range) = min_range {
                         // if minimum range to launch the attack is greater than the maximmum range
                         // then give an error -> this needs to be handled and the action skipped
@@ -975,20 +1007,18 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                             // current behaviour causes the program to panic
                             panic!("min_range > range, need to implement warning system visible to players")
                         }
-                        // check if the entity is within the minimum range to launch the attack
-                        if dist < min_range {
-                            // if so
-                            // get new target vector to appropriate range
-                            let new_target_vector = target_dir * (dist - min_range);
-                            // add target vector to current position vector to get
-                            // the target coordinate
-                            let edge_vector = new_target_vector + Vec2::new(pos.0, pos.1);
-                            // update the target coordinates
-                            move_to.0 = edge_vector[0];
-                            move_to.1 = edge_vector[1];
-                        }    
                     }
-                    // check if the entity is beyond the maximum range to launch the attack
+                }
+
+                // get vector to target from current position
+                let target_vector = Vec2::new(move_to.0 - pos.0, move_to.1 - pos.1);    
+                // get distance between two points
+                let dist = target_vector.length();
+                // get normalized target vector
+                let target_dir = target_vector.normalize();
+                // check if range was specified
+                if let Some(&range) = range {
+                    // check if the entity is beyond the maximum range
                     if dist > range {
                         // if so
                         // get new target vector to appropriate range
@@ -1000,7 +1030,21 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                         move_to.0 = edge_vector[0];
                         move_to.1 = edge_vector[1];
                     }
-                    
+                }
+                // check if min_range was specified
+                if let Some(&min_range) = min_range {
+                    // check if the entity is within the minimum range
+                    if dist < min_range {
+                        // if so
+                        // get new target vector to appropriate range
+                        let new_target_vector = target_dir * (dist - min_range);
+                        // add target vector to current position vector to get
+                        // the target coordinate
+                        let edge_vector = new_target_vector + Vec2::new(pos.0, pos.1);
+                        // update the target coordinates
+                        move_to.0 = edge_vector[0];
+                        move_to.1 = edge_vector[1];
+                    }    
                 }
 
                 let new_vel = get_straightline_velocity(move_to, (pos.0, pos.1));
