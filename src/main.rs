@@ -256,6 +256,8 @@ struct Nerve {
     current_action: Action,
     // action queue holds the next actions, after the current one
     action_queue: VecDeque<Action>,
+    // action timer allows for a sense of realtime
+    action_timer: Option<Timer>,
 }
 
 impl Nerve {
@@ -266,6 +268,8 @@ impl Nerve {
             current_action: Action::default(),
             // initialise with an empty action queue
             action_queue: VecDeque::new(),
+            // initialise with None
+            action_timer: None,
         }
     }
 }
@@ -280,7 +284,9 @@ enum ActionType {
     Attack,
     // track actions will move entities to follow a moving entity
     Track,
-    // empty actions do nothing
+    // wait actions will do nothing for a specified amount of time
+    Wait,
+    // empty actions do nothing and are immediately popped
     Empty,
 }
 
@@ -899,7 +905,7 @@ fn close_enough (x: f32, y: f32, enough: f32) -> bool {
 
 // run action system
 // responsible for implementing the various actions used for lower level control of entities
-fn run_action_system(mut query: Query<(&mut Nerve, &Position, &mut Velocity, &mut SpriteData)>, mut ent_query: Query<(&Id, &Position)>) {
+fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &mut Velocity, &mut SpriteData)>, mut ent_query: Query<(&Id, &Position)>) {
     // go through all entities with a brain, position, and velocity
     for (mut actions, pos, mut vel, mut sprite) in &mut query.iter() {
         // get the current action
@@ -1146,7 +1152,51 @@ fn run_action_system(mut query: Query<(&mut Nerve, &Position, &mut Velocity, &mu
                 }
 
             },
-            // empty actions do nothing
+            // wait actions do nothing for a specified amount of time
+            ActionType::Wait => {
+                if let Some(timer) = &mut actions.action_timer {
+                    timer.tick(time.delta_seconds);
+                    if timer.finished {
+                        actions.action_timer = None;
+
+                        // pop actions queue and ready next action
+                        // check if there are still actions in the action queue
+                        if let Some(action) = actions.action_queue.pop_front() {
+                            // if there are still more actions
+                            // set the next action to be the current action
+                            actions.current_action = action;
+                        }else{
+                            // if there are no more actions in the action queue
+                            // set the current action to be the empty action
+                            actions.current_action = Action::default();
+                        }
+                    }
+                }else{
+                    // default duration is None
+                    // if a duration parameter is not passed with the action
+                    // default behaviour is to wait for one second
+                    let mut duration = None;
+                    // attempt to retrieve parameters
+                    if let Some(params) = &action.params {
+                        // attempt to retrieve duration parameter
+                        duration = params.get("duration");
+                    }
+                    
+                    match duration {
+                        // if duration was specified
+                        Some(&length) => {
+                            // create a timer that waits for <length> number of seconds
+                            actions.action_timer = Some(Timer::from_seconds(length));
+                        },
+                        // if duration was not specified
+                        None => {
+                            // default behaviour is to wait for one second
+                            actions.action_timer = Some(Timer::from_seconds(1.0));
+                        }
+                    }
+                }
+            }
+            // empty actions do nothing and are immediately popped
             ActionType::Empty => {
                 // set to use idle animation
                 sprite.animation_type = AnimationType::Idle;
@@ -1163,6 +1213,9 @@ fn run_action_system(mut query: Query<(&mut Nerve, &Position, &mut Velocity, &mu
                     actions.current_action = Action::default();
                 }
             },
+            _ => {
+
+            }
         }
     }
 }
@@ -1546,10 +1599,6 @@ fn simple_idle_system(mut query: Query<(&Brain, &mut Nerve, &Position)>) {
 
     // iterate through every entity with a brain, nervous system, and a physical position
     for (_control, mut actions, pos) in &mut query.iter() {
-        // wandering somewhere has a 1% chance to happen per frame
-        if rng.gen::<f32>() < 0.99 {
-            continue;
-        }
         // check both current action as well as action queue
         match (actions.current_action.action_type, actions.action_queue.front()) {
             // if there is no current action and the action queue is empty
@@ -1570,6 +1619,18 @@ fn simple_idle_system(mut query: Query<(&Brain, &mut Nerve, &Position)>) {
                     target: (Some((loiter_x, loiter_y)), None),
                     params: None,
                 });
+
+                // create parameters hashmap
+                let mut params = HashMap::new();
+                // add duration parameter with value 3.0 (seconds)
+                params.insert("duration".to_string(), 3.0);
+
+                // add Wait action
+                actions.action_queue.push_back(Action {
+                    action_type: ActionType::Wait,
+                    target: (None, None),
+                    params: Some(params),
+                })
             }
             _ => {
 
