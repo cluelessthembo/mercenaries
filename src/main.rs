@@ -278,12 +278,14 @@ impl Nerve {
 #[derive(Debug, Clone, Copy)]
 enum ActionType {
     // move actions will move entities to a stationary point
+    // or a moving entity
+    // additional parameters include:
+    // range: maximum distance from target allowable
+    // min_range: minimum distance from target allowable
     Move,
     // attack actions will launch attacks at an entity until it 
     // ceases to become hostile
     Attack,
-    // track actions will move entities to follow a moving entity
-    Track,
     // wait actions will do nothing for a specified amount of time
     Wait,
     // empty actions do nothing and are immediately popped
@@ -668,7 +670,7 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Nerve)>) {
                 // add move action to the target entity
                 // get within a certain distance of the target
                 actions.action_queue.push_back(Action {
-                    action_type: ActionType::Track,
+                    action_type: ActionType::Move,
                     target: (None, Some(command.target.clone())),
                     params: Some(params.clone()),
                 });
@@ -863,13 +865,13 @@ fn get_straightline_velocity(target: (f32, f32), curr: (f32, f32)) -> Vec2 {
     // otherwise if distance is greater than 0
     if dist > 0.0 {
         // divide the distance by the distance factor and cap at 1.0
-        let ease_input = (dist / (2.75 * 50.0)).min(1.0);
+        let ease_input = (dist / 137.5).min(1.0);
 
         // new velocity vector is a rescaled exponential applied to the normalized distance vector
         // the result is that speed is based on distance and varies according to an exponential curve
         // and the velocity is always towards the move point
         // if pathfinding is implemented for the player, then this will need to be changed
-        new_vel = ezing::expo_out( ease_input ) * (2.75 * 50.0) * dist_vector.normalize();
+        new_vel = ezing::expo_out( ease_input ) * 137.5 * dist_vector.normalize();
     }
 
     // if the new x-velocity has insignificant magnitude,
@@ -915,45 +917,30 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
         match action.action_type {
             // move actions will move the entity to a stationary point
             ActionType::Move => {
-
-                sprite.animation_type = AnimationType::Move;
-
-                let new_vel = get_straightline_velocity(action.target.0.unwrap(), (pos.0, pos.1));
                 
-                // set the velocity vector to use the new velocity vector
-                vel.0 = new_vel[0];
-                vel.1 = new_vel[1];
-
-                // if no longer moving
-                if vel.0.abs() < 1.0 && vel.1.abs() < 1.0 {
-                    // pop actions queue and ready next action
-                    // check if there are still actions in the action queue
-                    if let Some(action) = actions.action_queue.pop_front() {
-                        // if there are still more actions
-                        // set the next action to be the current action
-                        actions.current_action = action;
-                    }else{
-                        // if there are no more actions in the action queue
-                        // set the current action to be the empty action
-                        actions.current_action = Action::default();
-                    }
-                }
-            },
-            // track actions move the entity to a moving entity
-            ActionType::Track => {
-
                 sprite.animation_type = AnimationType::Move;
 
-                // update target position
-                let mut target_pos = (f32::NAN, f32::NAN);
+                let mut move_to = (f32::NAN, f32::NAN);
 
-                // go through entities and find the correct position component
-                for (id, pos) in &mut ent_query.iter() {
-                    // check if the id matches
-                    if *action.target.1.as_ref().unwrap() == id.id() {
-                        // set the target position
-                        target_pos = (pos.0, pos.1);
-                    }
+                match action.target {
+                    (None, Some(id)) => {
+                        for (eid, pos) in &mut ent_query.iter() {
+                            // check if the id matches
+                            if id == eid.id() {
+                                // set the target position
+                                move_to = (pos.0, pos.1);
+                            }
+                        }
+                    },
+                    (Some(target), _) => {
+                        move_to = target;
+                    },
+                    (None, None) => {
+                        // no target given
+                        // should warn user that action is invalid then skip
+                        // need warning system, currently just aborts
+                        panic!("move action has no target");
+                    },
                 }
 
                 // these parameters are technically optional, however
@@ -974,7 +961,7 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                 // check if range was specified
                 if let Some(&range) = range {
                     // get vector to target from current position
-                    let target_vector = Vec2::new(target_pos.0 - pos.0, target_pos.1 - pos.1);    
+                    let target_vector = Vec2::new(move_to.0 - pos.0, move_to.1 - pos.1);    
                     // get distance between two points
                     let dist = target_vector.length();
                     // get normalized target vector
@@ -997,8 +984,8 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                             // the target coordinate
                             let edge_vector = new_target_vector + Vec2::new(pos.0, pos.1);
                             // update the target coordinates
-                            target_pos.0 = edge_vector[0];
-                            target_pos.1 = edge_vector[1];
+                            move_to.0 = edge_vector[0];
+                            move_to.1 = edge_vector[1];
                         }    
                     }
                     // check if the entity is beyond the maximum range to launch the attack
@@ -1010,20 +997,19 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                         // the target coordinate
                         let edge_vector = new_target_vector + Vec2::new(pos.0, pos.1);
                         // update the target coordinates
-                        target_pos.0 = edge_vector[0];
-                        target_pos.1 = edge_vector[1];
+                        move_to.0 = edge_vector[0];
+                        move_to.1 = edge_vector[1];
                     }
                     
                 }
 
-
-                let new_vel = get_straightline_velocity(target_pos, (pos.0, pos.1));
+                let new_vel = get_straightline_velocity(move_to, (pos.0, pos.1));
                 
                 // set the velocity vector to use the new velocity vector
                 vel.0 = new_vel[0];
                 vel.1 = new_vel[1];
 
-                // if no longer moving (probably at destination)
+                // if no longer moving
                 if vel.0.abs() < 1.0 && vel.1.abs() < 1.0 {
                     // pop actions queue and ready next action
                     // check if there are still actions in the action queue
@@ -1121,7 +1107,7 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                         None => {
                             // retrack target
                             actions.action_queue.push_back(Action {
-                                action_type: ActionType::Track,
+                                action_type: ActionType::Move,
                                 target: action.target.clone(),
                                 params: action.params.clone(),
                             });
