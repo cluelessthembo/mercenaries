@@ -1517,36 +1517,50 @@ fn get_hostile_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) ->
     template
 }
 
+// Brain plugin
+// responsible for independent action generation
 struct BrainPlugin;
 
+// boilerplate code for Brain plugin
 impl Plugin for BrainPlugin {
     fn build(&self, app: &mut AppBuilder){
+        // add in simple idle system
         app.add_system(simple_idle_system.system());     
     }
 }
 
+// Brain component
+// spawn in along any entity that should be able to think for itself
 struct Brain;
 
 // simple idle system
 // allows AI actors to wander around aimlessly
 // will probably be replaced, reworked or at least renamed
 fn simple_idle_system(mut query: Query<(&Brain, &mut Nerve, &Position)>) {
+    // initialise random number generator
     let mut rng = rand::thread_rng();
 
+    // iterate through every entity with a brain, nervous system, and a physical position
     for (_control, mut actions, pos) in &mut query.iter() {
-        
+        // wandering somewhere has a 1% chance to happen per frame
         if rng.gen::<f32>() < 0.99 {
             continue;
         }
-
+        // check both current action as well as action queue
         match (actions.current_action.action_type, actions.action_queue.front()) {
+            // if there is no current action and the action queue is empty
             (ActionType::Empty, None) => {
+                // generate a random coordinate within 200 units of the current position
+                // horizontal deviation
                 let rand_x = rng.gen::<f32>() * 200.0 - rng.gen::<f32>() * 200.0;
+                // vertical deviation
                 let rand_y = rng.gen::<f32>() * 200.0 - rng.gen::<f32>() * 200.0;
                 
+                // get random coordinate and make sure it remains in bounds
                 let loiter_x = (rand_x + pos.0).max(0.0).min(1600.0);
                 let loiter_y = (rand_y + pos.1).max(0.0).min(900.0);
 
+                // add a move action to the randomly generated coordinate
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Move,
                     target: (Some((loiter_x, loiter_y)), None),
