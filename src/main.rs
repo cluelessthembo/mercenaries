@@ -1481,6 +1481,10 @@ fn get_squadmate_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) 
     template
 }
 
+// get hostile sprite template
+// gives the template sprite for hostiles
+// right now only used to test animation system
+// actual method of getting hostile sprites may vary
 fn get_hostile_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) -> SpriteData {
     let mut template = SpriteData::new();
     
