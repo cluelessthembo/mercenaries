@@ -1214,7 +1214,8 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                 }
             },
             _ => {
-
+                // this should never be reached
+                panic!("unimplemented action");
             }
         }
     }
