@@ -1859,6 +1859,14 @@ impl Default for Behaviour {
     }
 }
 
+fn select_behaviour_set_system(mut query: Query<(&Position, &mut Behaviour, &mut Nerve)>) {
+
+}
+
+fn select_behaviour_system(mut query: Query<(&Position, &mut Behaviour, &mut Nerve)>) {
+    
+}
+
 fn run_behaviour_system(mut query: Query<(&Position, &mut Behaviour, &mut Nerve)>) {
     for (pos, mut behav, mut nerv) in &mut query.iter() {
         match &behav.current_behaviour {
