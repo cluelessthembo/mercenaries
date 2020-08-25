@@ -85,7 +85,7 @@ fn main() {
     .add_plugin(ActionsPlugin)
     // add in the animations plugin
     .add_plugin(AnimationPlugin)
-    .add_plugin(BrainPlugin)
+    .add_plugin(BehaviourPlugin)
     // run the app
     .run();
 }
@@ -219,7 +219,34 @@ fn draw_sprite_system(mut query: Query<(&Sprite, &mut Translation, &Position)>){
 pub struct PersonPlugin;
 // person component
 // spawn this component along with any entity that should be considered a person
-struct Person;
+
+enum AttitudeType {
+    Neutral,
+    Squad,
+    Hostile,
+    Ally,
+}
+
+struct Person {
+    attitude: AttitudeType,
+}
+
+impl Default for Person {
+    fn default() -> Self {
+        Person {
+            attitude: AttitudeType::Neutral,
+        }
+    }
+}
+
+impl Person {
+    fn new(att: AttitudeType) -> Self {
+        Person {
+            attitude: att,
+        }
+    }
+}
+
 // controlled component
 // spawn this component along with any entity that should be considered controlled by the player
 #[derive(Default)]
@@ -412,7 +439,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         )
         .with(Id::new())
         // spawn person component along with to signify that this entity is a person
-        .with(Person)
+        .with(Person::new(AttitudeType::Squad))
         // spawn position component along with so that this entity has a physical position
         .with(Position(100.0, 100.0))
         // spawn velocity component along with so that this entity has a physical velocity and can move
@@ -431,13 +458,13 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
             SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
         )
         .with(Id::new())
-        .with(Person)
+        .with(Person::new(AttitudeType::Squad))
         .with(Position(800.0, 500.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(1))
         .with(Nerve::new())
         .with(Size(10.0, 10.0))
-        .with(Brain)
+        .with(Behaviour::default())
         .with(get_squadmate_sprite_template(&mut materials))
 
         .spawn(
@@ -445,13 +472,13 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
             SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
         )
         .with(Id::new())
-        .with(Person)
+        .with(Person::new(AttitudeType::Squad))
         .with(Position(600.0, 100.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(2))
         .with(Nerve::new())
         .with(Size(10.0, 10.0))
-        .with(Brain)
+        .with(Behaviour::default())
         .with(get_squadmate_sprite_template(&mut materials))
 
         .spawn(
@@ -459,22 +486,19 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
             SimpleRect::new(blue_handle, Vec2::new(10.0, 10.0))
         )
         .with(Id::new())
-        .with(Person)
+        .with(Person::new(AttitudeType::Squad))
         .with(Position(1000.0, 300.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(3))
         .with(Nerve::new())
         .with(Size(10.0, 10.0))
-        .with(Brain)
+        .with(Behaviour::default())
         .with(get_squadmate_sprite_template(&mut materials))
         ;
 }
 // encounter plugin
 // responsible for generating encounters for the player
 pub struct EncounterPlugin;
-// hostile component
-// spawn this component along side any entity that is hostile to the player
-struct Hostile;
 
 // implementation of the plugin trait,
 // required for this to be used as a plugin
@@ -501,29 +525,26 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         )
         .with(Id::new())
         // spawn along the person component to signify that this entity is a person
-        .with(Person)
+        .with(Person::new(AttitudeType::Hostile))
         // spawn along the position component so that this entity has a physical position on the screen
         .with(Position(200.0, 400.0))
         // spawn along the velocity component so that this entity has a physical velocity and can move
         .with(Velocity(0.0, 0.0))
-        // spawn along the hostile component so that this entity is considered hostile to the player
-        .with(Hostile)
         .with(Nerve::new())
         .with(Size(10.0, 10.0))
-        .with(Brain)
+        .with(Behaviour::default())
         .with(get_hostile_sprite_template(&mut materials))
         // repeat for another hostile entity
         .spawn(
             SimpleRect::new(black_handle, Vec2::new(10.0, 10.0)),
         )
         .with(Id::new())
-        .with(Person)
+        .with(Person::new(AttitudeType::Hostile))
         .with(Position(400.0, 200.0))
         .with(Velocity(0.0, 0.0))
-        .with(Hostile)
         .with(Nerve::new())
         .with(Size(10.0, 10.0))
-        .with(Brain)
+        .with(Behaviour::default())
         .with(get_hostile_sprite_template(&mut materials))
         ;
 }
@@ -659,11 +680,16 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Nerve)>) {
                 actions.current_action = Action::default();
                 actions.action_queue.clear();
 
+                let mut params = HashMap::new();
+                // range refers to the maximum range acceptable
+                // set at zero to force entity to move to the target location
+                params.insert("range".to_string(), 0.0);
+
                 // add move action to the target location
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Move,
                     target: (command.target_point, None),
-                    params: None,
+                    params: Some(params.clone()),
                 });
             },
             CommandType::Attack => {
@@ -702,12 +728,28 @@ fn move_controlled_system(mut query: Query<(&mut Controlled, &mut Nerve)>) {
                 // min_range refers to the minimum distance that we want to put between
                 // us and the point/entity
                 params.insert("min_range".to_string(), 200.0);
-
                 // add move action to the target entity
                 // get away from a certain distance of the target
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Move,
                     target: (command.target_point, command.target_id.clone()),
+                    params: Some(params.clone()),
+                });
+            },
+            CommandType::Follow => {
+                // clear current actions to replace with new actions
+                actions.current_action = Action::default();
+                actions.action_queue.clear();
+
+                let mut params = HashMap::new();
+                // range refers to the maximum range acceptable
+                params.insert("range".to_string(), 40.0);
+                params.insert("no_skip".to_string(), 1.0);
+
+                // add move action to the target entity
+                actions.action_queue.push_back(Action {
+                    action_type: ActionType::Move,
+                    target: (None, command.target_id.clone()),
                     params: Some(params.clone()),
                 });
             },
@@ -769,7 +811,9 @@ enum CommandType {
     // attack command orders a pawn to attack a certain entity
     Attack,
     // flee command orders a pawn to move a certain distance away from a certain entity/spot
-    Flee,    
+    Flee,  
+    // follow command orders a pawn to follow another  
+    Follow,
     // empty command does nothing
     Empty,
 }
@@ -786,7 +830,7 @@ impl Default for CommandType {
 
 // player control system
 // responsible for translating all inputs into the respective actions in-game
-fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut Controlled>, mut hostiles: Query<(&Id, &Hostile, &Position, &Size)>) {
+fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut Controlled>, mut persons: Query<(&Id, &Person, &Position, &Size)>) {
     // if the left mouse button was just pressed
     if inputs.mouse_just_presses.contains(&MouseButton::Left) {
         
@@ -796,12 +840,29 @@ fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut C
         let mut target_entity = None;
 
         // check if you clicked on something
-        for (id, _host, pos, size) in &mut hostiles.iter() {
+        for (id, pers, pos, size) in &mut persons.iter() {
             // check if an entity was clicked
             if check_point_collision(inputs.mouse_position, (pos.0, pos.1), (size.0, size.1)) {
                 // if an entity was clicked
-                // switch command type to an attack type    
-                command_type = CommandType::Attack;
+
+                // check attitude of person clicked
+                match &pers.attitude {
+                    // if attitude is hostile
+                    AttitudeType::Hostile => {
+                        // switch command type to an attack type    
+                        command_type = CommandType::Attack;
+                    },
+                    AttitudeType::Neutral => {
+                        // switch command type to an attack type    
+                        command_type = CommandType::Attack;
+                    },
+                    AttitudeType::Squad => {
+                        // switch command type to an attack type    
+                        command_type = CommandType::Follow;
+                    },
+                    _ => {}
+                }
+                
                 // set the target entity to the entity clicked
                 target_entity = Some(id.id());
                 // once target entity is found, break out of the loop
@@ -810,10 +871,16 @@ fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut C
         }
 
         // check hotkeys pressed
+        // left shift switches move/follow/attack -> flee
         if inputs.key_presses.contains(&KeyCode::LShift) {
             command_type = CommandType::Flee;
+        // left control switches move/attack -> follow
+        // left control takes precedence over left shift
+        } else if inputs.key_presses.contains(&KeyCode::LControl) && target_entity.is_some() {
+            command_type = CommandType::Follow;
         }
         
+
         // squad_control vector contains all the squad indices being ordered
         let mut squad_control = Vec::new();
         
@@ -872,6 +939,16 @@ fn player_control_system(inputs: Res<InputState>, mut controlstate: Query<&mut C
                             target_id: target_entity.clone(),
                         };
                     },
+                    // if the command type is follow
+                    CommandType::Follow => {
+                        // set the current command to a follow type command
+                        // at what is clicked
+                        state.current_command = Command {
+                            command_type: command_type,
+                            target_point: None,
+                            target_id: target_entity.clone(),
+                        }
+                    }
                     // if the command type is empty
                     CommandType::Empty => {
                         // set the current command to an empty type command
@@ -956,9 +1033,9 @@ fn close_enough (x: f32, y: f32, enough: f32) -> bool {
 
 // run action system
 // responsible for implementing the various actions used for lower level control of entities
-fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &mut Velocity, &mut SpriteData)>, mut ent_query: Query<(&Id, &Position)>) {
+fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Id, &Position, &mut Velocity, &mut SpriteData)>, mut ent_query: Query<(&Id, &Position)>) {
     // go through all entities with a brain, position, and velocity
-    for (mut actions, pos, mut vel, mut sprite) in &mut query.iter() {
+    for (mut actions, id, pos, mut vel, mut sprite) in &mut query.iter() {
         // get the current action
         let action = actions.current_action.clone();
 
@@ -971,13 +1048,35 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
 
                 let mut move_to = (f32::NAN, f32::NAN);
 
+
                 match action.target {
-                    (_, Some(id)) => {
+                    (_, Some(tid)) => {
+                        // check if the targeted id is the same as this id
+                        if tid == id.id() {
+                            // if this move action is self-targeted
+                            // skip it (it's pointless)
+                            // this is important to do in cases where
+                            // ordinarily the move isn't popped when at rest
+                            // e.g. follow commands
+                            
+                            // pop actions queue and ready next action
+                            // check if there are still actions in the action queue
+                            if let Some(action) = actions.action_queue.pop_front() {
+                                // if there are still more actions
+                                // set the next action to be the current action
+                                actions.current_action = action;
+                            }else{
+                                // if there are no more actions in the action queue
+                                // set the current action to be the empty action
+                                actions.current_action = Action::default();
+                            }                              
+                        }
                         for (eid, pos) in &mut ent_query.iter() {
                             // check if the id matches
-                            if id == eid.id() {
+                            if tid == eid.id() {
                                 // set the target position
                                 move_to = (pos.0, pos.1);
+                                break;
                             }
                         }
                     },
@@ -993,11 +1092,13 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                 }
 
                 // these parameters are technically optional, however
-                // if not defined the attack range will be 0
+                // if not defined no movement will occur
                 // range defaults to None
                 let mut range = None;
                 // min_range defaults to None
                 let mut min_range = None;
+                // no_skip defaults to None
+                let mut no_skip = None;
 
                 // check if additional parameters were passed in with the action
                 if let Some(params) = &action.params {
@@ -1005,7 +1106,13 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                     range = params.get("range");
                     // get min_range parameter from hashmap
                     min_range = params.get("min_range");
+                    // get no_skip parameter from hashmap
+                    no_skip = params.get("no_skip");
                 }
+
+                // flag to check if move vector should be used
+                // i.e. if position needs to be adjusted
+                let mut use_move_vector = false;
                 
                 // check for parameter relational validity
                 if let Some(&range) = range {
@@ -1026,21 +1133,7 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                 let dist = target_vector.length();
                 // get normalized target vector
                 let target_dir = target_vector.normalize();
-                // check if range was specified
-                if let Some(&range) = range {
-                    // check if the entity is beyond the maximum range
-                    if dist > range {
-                        // if so
-                        // get new target vector to appropriate range
-                        let new_target_vector = target_dir * (dist - range);
-                        // add target vector to current position vector to get 
-                        // the target coordinate
-                        let edge_vector = new_target_vector + Vec2::new(pos.0, pos.1);
-                        // update the target coordinates
-                        move_to.0 = edge_vector[0];
-                        move_to.1 = edge_vector[1];
-                    }
-                }
+                
                 // check if min_range was specified
                 if let Some(&min_range) = min_range {
                     // check if the entity is within the minimum range
@@ -1054,17 +1147,59 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
                         // update the target coordinates
                         move_to.0 = edge_vector[0];
                         move_to.1 = edge_vector[1];
+
+                        // position must be adjusted
+                        // set flag
+                        use_move_vector = true;
                     }    
                 }
+                
+                // check if range was specified
+                if let Some(&range) = range {
+                    // check if the entity is beyond the maximum range
+                    if dist > range {
+                        // if so
+                        // get new target vector to appropriate range
+                        let new_target_vector = target_dir * (dist - range);
+                        // add target vector to current position vector to get 
+                        // the target coordinate
+                        let edge_vector = new_target_vector + Vec2::new(pos.0, pos.1);
+                        // update the target coordinates
+                        move_to.0 = edge_vector[0];
+                        move_to.1 = edge_vector[1];
+                        
+                        // position must be adjusted
+                        // set flag
+                        use_move_vector = true;
+                    }
+                }
 
+                if !use_move_vector {
+                    // position does not need to be adjusted for now
+                    // continue to next frame without using calculations
+                    continue;
+                }
+
+                // retrieve new straightline velocity to position
                 let new_vel = get_straightline_velocity(move_to, (pos.0, pos.1));
                 
                 // set the velocity vector to use the new velocity vector
                 vel.0 = new_vel[0];
                 vel.1 = new_vel[1];
 
+                // check if this move can be skipped
+                let mut can_skip = true;
+                // check no_skip parameter to see if this move can be skipped
+                if let Some(&no_skip) = no_skip {
+                    // if no_skip is positive
+                    if no_skip > 0.0 {
+                        // set can_skip to false
+                        can_skip = false;
+                    }
+                }
+
                 // if no longer moving
-                if vel.0.abs() < 1.0 && vel.1.abs() < 1.0 {
+                if vel.0.abs() < 1.0 && vel.1.abs() < 1.0 && can_skip {
                     // pop actions queue and ready next action
                     // check if there are still actions in the action queue
                     if let Some(action) = actions.action_queue.pop_front() {
@@ -1240,7 +1375,9 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Position, &
             ActionType::Empty => {
                 // set to use idle animation
                 sprite.animation_type = AnimationType::Idle;
-                // empty actions do nothing, immediately move to the next
+                // empty actions do nothing, reset all moving parts and move on to the next
+                vel.0 = 0.0;
+                vel.1 = 0.0;
                 // pop actions queue and ready next action
                 // check if there are still actions in the action queue
                 if let Some(action) = actions.action_queue.pop_front() {
@@ -1615,26 +1752,22 @@ fn get_hostile_sprite_template(materials: &mut ResMut<Assets<ColorMaterial>>) ->
     template
 }
 
-// Brain plugin
+// Behaviour plugin
 // responsible for independent action generation
-struct BrainPlugin;
+struct BehaviourPlugin;
 
-// boilerplate code for Brain plugin
-impl Plugin for BrainPlugin {
+// boilerplate code for Behaviour plugin
+impl Plugin for BehaviourPlugin {
     fn build(&self, app: &mut AppBuilder){
         // add in simple idle system
         app.add_system(simple_idle_system.system());     
     }
 }
 
-// Brain component
-// spawn in along any entity that should be able to think for itself
-struct Brain;
-
 // simple idle system
 // allows AI actors to wander around aimlessly
 // will probably be replaced, reworked or at least renamed
-fn simple_idle_system(mut query: Query<(&Brain, &mut Nerve, &Position)>) {
+fn simple_idle_system(mut query: Query<(&Behaviour, &mut Nerve, &Position)>) {
     // initialise random number generator
     let mut rng = rand::thread_rng();
 
@@ -1654,11 +1787,15 @@ fn simple_idle_system(mut query: Query<(&Brain, &mut Nerve, &Position)>) {
                 let loiter_x = (rand_x + pos.0).max(0.0).min(1600.0);
                 let loiter_y = (rand_y + pos.1).max(0.0).min(900.0);
 
+
+                let mut params = HashMap::new();
+                // range refers to the maximum range at which an attack can be launched
+                params.insert("range".to_string(), 0.0);
                 // add a move action to the randomly generated coordinate
                 actions.action_queue.push_back(Action {
                     action_type: ActionType::Move,
                     target: (Some((loiter_x, loiter_y)), None),
-                    params: None,
+                    params: Some(params),
                 });
 
                 // create parameters hashmap
@@ -1677,5 +1814,61 @@ fn simple_idle_system(mut query: Query<(&Brain, &mut Nerve, &Position)>) {
 
             }     
         }
+    }
+}
+
+enum BehaviourSet {
+    AtRest,
+    OnMarch,
+    PreCombat,
+    Combat,
+    Retreat,
+    Empty,
+}
+
+enum BehaviourType {
+    Rest,
+    Loiter,
+    Alert,
+    Hide,
+    Preparation,
+    AlertMove,
+    LoiterMove,
+    Scout,
+    Stalk,
+    Vantage,
+    Charge,
+    Flank,
+    Defend,
+    Kite,
+    Flee,
+    Empty,
+}
+
+struct Behaviour {
+    current_behaviour_set: BehaviourSet,
+    current_behaviour: BehaviourType,
+}
+
+impl Default for Behaviour {
+    fn default() -> Self {
+        Behaviour {
+            current_behaviour_set: BehaviourSet::Empty,
+            current_behaviour: BehaviourType::Empty,
+        }
+    }
+}
+
+fn run_behaviour_system(mut query: Query<(&Position, &mut Behaviour, &mut Nerve)>) {
+    for (pos, mut behav, mut nerv) in &mut query.iter() {
+        match &behav.current_behaviour {
+            
+            Empty => {
+
+            },
+            _ => {
+
+            },
+        }    
     }
 }
