@@ -55,7 +55,7 @@ fn main() {
     // details about the window, 
     // including the title, and the dimensions
     .add_resource(WindowDescriptor {
-        title: "Mercenaries v0.0.0".to_string(),
+        title: "Mercenaries v0.0.1".to_string(),
         width: 1600,
         height: 900,
         vsync: true,
