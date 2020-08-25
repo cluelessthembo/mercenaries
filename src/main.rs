@@ -1361,12 +1361,12 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Id, &Positi
                         // if duration was specified
                         Some(&length) => {
                             // create a timer that waits for <length> number of seconds
-                            actions.action_timer = Some(Timer::from_seconds(length));
+                            actions.action_timer = Some(Timer::from_seconds(length, false));
                         },
                         // if duration was not specified
                         None => {
                             // default behaviour is to wait for one second
-                            actions.action_timer = Some(Timer::from_seconds(1.0));
+                            actions.action_timer = Some(Timer::from_seconds(1.0, false));
                         }
                     }
                 }
@@ -1580,12 +1580,12 @@ impl AnimationFrameRate {
     // default frame rate
     fn new() -> Self {
         // 6fps per second animation frame rate
-        AnimationFrameRate(Timer::from_seconds(4.0 / 24.0))
+        AnimationFrameRate(Timer::from_seconds(4.0 / 24.0, true))
     }
     // generates a new animation frame rate struct from a given fps
     // fps refers to the desired number of frames per second
     fn from_frame_rate(fps: f32) -> Self {
-        AnimationFrameRate(Timer::from_seconds(1.0 / fps))
+        AnimationFrameRate(Timer::from_seconds(1.0 / fps, true))
     }
 }
 
@@ -1627,8 +1627,6 @@ fn animate_system(time: Res<Time>, mut timer: ResMut<AnimationFrameRate>, mut qu
                 *sprite = frame.sprite;
             }
         }
-        // reset frame timer
-        timer.0.reset();
     }
 }
 
