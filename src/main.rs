@@ -67,7 +67,7 @@ fn main() {
         title: "Mercenaries v0.0.1".to_string(),
         width: WINDOW_WIDTH as u32,
         height: WINDOW_HEIGHT as u32,
-        vsync: true,
+        vsync: false,
         ..Default::default()
     })
     // resource used to determine background colour of window
@@ -1965,7 +1965,7 @@ fn simple_map_setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMa
         for x in 0..map_w {
             match map.data.get(x + y * map_w) {
                 Some(&SimpleTile::Floor) => {
-                    // get the proper coordinates for translation
+                    /*// get the proper coordinates for translation
                     let adj_pos = get_translate_from_position(5.0 + 10.0 * x as f32, 5.0 + 10.0 * y as f32);
 
                     commands.spawn(SpriteComponents {
@@ -1976,10 +1976,10 @@ fn simple_map_setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMa
                             size: Vec2::new(10.0, 10.0),
                         },
                         ..Default::default()
-                    });
+                    });*/
                 },
                 Some(&SimpleTile::Wall) => {
-                    // get the proper coordinates for translation
+                    /*// get the proper coordinates for translation
                     let adj_pos = get_translate_from_position(5.0 + 10.0 * x as f32, 5.0 + 10.0 * y as f32);
 
                     commands.spawn(SpriteComponents {
@@ -1990,7 +1990,7 @@ fn simple_map_setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMa
                             size: Vec2::new(10.0, 10.0),
                         },
                         ..Default::default()
-                    });
+                    });*/
                 },
                 _ => {
 
