@@ -19,6 +19,10 @@ use rand::Rng;
 use noise::{NoiseFn, Perlin, Seedable};
 // imports for reading file
 use std::fs;
+
+
+use bevy_tiled;
+
 // id component
 // this should be spawned along side every entity
 // it is responsible for keeping the unique id of each entity
@@ -103,6 +107,16 @@ pub struct FPSMeter;
 // along with fps counter
 fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>, asset_server: Res<AssetServer>){
     let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
+
+    let texture_handle = asset_server.load("assets/tilesets/hyptosis.png").unwrap();
+    commands
+        .spawn(bevy_tiled::TiledMapComponents {
+            map_asset: asset_server.load("assets/maps/test_map.tmx").unwrap(),
+            material: materials.add(texture_handle.into()),
+            center: true,
+            ..Default::default()
+        })
+        .spawn(Camera2dComponents::default());
 
     commands
         // cameras
