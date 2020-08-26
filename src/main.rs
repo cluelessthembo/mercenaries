@@ -223,7 +223,7 @@ fn draw_sprite_system(mut query: Query<(&Sprite, &mut Translation, &Position)>){
         let adj_pos = get_translate_from_position(pos.0, pos.1);
 
         // assign coordinates
-        transl.0 = Vec3::new(adj_pos.0, adj_pos.1, 0.0);
+        transl.0 = Vec3::new(adj_pos.0, adj_pos.1, transl[2]);
     }
 }
 // person plugin
@@ -413,7 +413,7 @@ impl SimpleRect {
         SpriteComponents {
             material: color_handle,
             // move sprite off screen
-            translation: Translation(Vec3::new(-1000.0, -1000.0, 0.0)),
+            translation: Translation(Vec3::new(-1000.0, -1000.0, 1.0)),
             sprite: Sprite {
                 size: size,
             },
@@ -1965,7 +1965,8 @@ fn simple_map_setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMa
         for x in 0..map_w {
             match map.data.get(x + y * map_w) {
                 Some(&SimpleTile::Floor) => {
-                    /*// get the proper coordinates for translation
+                    /*
+                    // get the proper coordinates for translation
                     let adj_pos = get_translate_from_position(5.0 + 10.0 * x as f32, 5.0 + 10.0 * y as f32);
 
                     commands.spawn(SpriteComponents {
@@ -1976,10 +1977,12 @@ fn simple_map_setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMa
                             size: Vec2::new(10.0, 10.0),
                         },
                         ..Default::default()
-                    });*/
+                    });
+                    */
                 },
                 Some(&SimpleTile::Wall) => {
-                    /*// get the proper coordinates for translation
+                    /*
+                    // get the proper coordinates for translation
                     let adj_pos = get_translate_from_position(5.0 + 10.0 * x as f32, 5.0 + 10.0 * y as f32);
 
                     commands.spawn(SpriteComponents {
@@ -1990,7 +1993,8 @@ fn simple_map_setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMa
                             size: Vec2::new(10.0, 10.0),
                         },
                         ..Default::default()
-                    });*/
+                    });
+                    */
                 },
                 _ => {
 
