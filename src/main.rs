@@ -23,6 +23,7 @@ use std::fs;
 // settings for window width/height
 static WINDOW_WIDTH: f32 = 800.0;
 static WINDOW_HEIGHT: f32 = 450.0;
+static PLAYER_Z_LEVEL: f32 = 10.0;
 
 // imports for bevy_tiled
 use bevy_tiled;
@@ -426,7 +427,7 @@ impl SimpleRect {
         SpriteComponents {
             material: color_handle,
             // move sprite off screen
-            translation: Translation(Vec3::new(-1000.0, -1000.0, 1.0)),
+            translation: Translation(Vec3::new(-1000.0, -1000.0, PLAYER_Z_LEVEL)),
             sprite: Sprite {
                 size: size,
             },
@@ -1911,7 +1912,7 @@ struct MapPlugin;
 
 impl Plugin for MapPlugin {
     fn build (&self, app: &mut AppBuilder){
-        app.add_startup_system(simple_map_setup.system());
+        //app.add_startup_system(simple_map_setup.system());
     }
 }
 
