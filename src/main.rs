@@ -19,6 +19,11 @@ use rand::Rng;
 use noise::{NoiseFn, Perlin, Seedable};
 // imports for reading file
 use std::fs;
+
+static WINDOW_WIDTH: f32 = 800.0;
+static WINDOW_HEIGHT: f32 = 450.0;
+
+
 // id component
 // this should be spawned along side every entity
 // it is responsible for keeping the unique id of each entity
@@ -60,8 +65,8 @@ fn main() {
     // including the title, and the dimensions
     .add_resource(WindowDescriptor {
         title: "Mercenaries v0.0.1".to_string(),
-        width: 1600,
-        height: 900,
+        width: WINDOW_WIDTH as u32,
+        height: WINDOW_HEIGHT as u32,
         vsync: true,
         ..Default::default()
     })
@@ -75,6 +80,8 @@ fn main() {
     .add_startup_system(setup.system())
     // add in the fps counter system
     .add_system(fps_monitor_system.system())
+    // add in the map plugin
+    .add_plugin(MapPlugin)
     // add in the person plugin
     .add_plugin(PersonPlugin)
     // add in the encounter plugin
@@ -89,6 +96,7 @@ fn main() {
     .add_plugin(ActionsPlugin)
     // add in the animations plugin
     .add_plugin(AnimationPlugin)
+    // add in the behaviour plugin
     .add_plugin(BehaviourPlugin)
     // run the app
     .run();
@@ -202,7 +210,7 @@ fn get_translate_from_position(x: f32, y: f32) -> (f32, f32) {
     // we must shift the position coordinates towards the 
     // upper left corner of the screen by half the 
     // screen dimensions
-    (x - 1600.0 / 2.0, (900.0 - y) - 900.0 / 2.0)
+    (x - WINDOW_WIDTH / 2.0, (WINDOW_HEIGHT - y) - WINDOW_HEIGHT / 2.0)
 }
 
 // draw sprite system
@@ -1789,8 +1797,8 @@ fn simple_idle_system(mut query: Query<(&Behaviour, &mut Nerve, &Position)>) {
                 let rand_y = rng.gen::<f32>() * 200.0 - rng.gen::<f32>() * 200.0;
                 
                 // get random coordinate and make sure it remains in bounds
-                let loiter_x = (rand_x + pos.0).max(0.0).min(1600.0);
-                let loiter_y = (rand_y + pos.1).max(0.0).min(900.0);
+                let loiter_x = (rand_x + pos.0).max(10.0).min(WINDOW_WIDTH - 10.0);
+                let loiter_y = (rand_y + pos.1).max(10.0).min(WINDOW_HEIGHT - 10.0);
 
 
                 let mut params = HashMap::new();
@@ -1890,7 +1898,7 @@ struct MapPlugin;
 
 impl Plugin for MapPlugin {
     fn build (&self, app: &mut AppBuilder){
-
+        app.add_startup_system(simple_map_setup.system());
     }
 }
 
@@ -1900,14 +1908,14 @@ enum SimpleTile {
 }
 
 struct SimpleMap {
-    size: Vec2,
+    size: (usize, usize),
     data: Vec<SimpleTile>,
 }
 
 impl Default for SimpleMap {
     fn default() -> Self {
         SimpleMap {
-            size: Vec2::new(0.0, 0.0),
+            size: (0, 0),
             data: Vec::new(),
         }
     }
@@ -1917,11 +1925,78 @@ impl SimpleMap {
     fn load_from_file(filepath: String) -> Self {
         let contents = fs::read_to_string(filepath).expect("Something went wrong when reading the file.");
         
+        let mut data = Vec::new();
+        let height = contents.lines().count();
+        let mut width = 0;
+
         for line in contents.lines() {
-            
+            width = line.chars().count();
+            for c in line.chars() {
+                match c {
+                    '0' => {
+                        data.push(SimpleTile::Floor);
+                    },
+                    '1' => {
+                        data.push(SimpleTile::Wall);
+                    },
+                    _ => {
+
+                    },
+                }
+            }
         }
         
-        SimpleMap::default()
+        SimpleMap {
+            size: (width, height),
+            data: data,
+        }
+    }
+}
+
+fn simple_map_setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
+    let map = SimpleMap::load_from_file("assets/maps/simple_map.txt".to_string());
+
+    let floor_handle = materials.add(Color::rgb(0.7, 0.7, 0.7).into());
+    let wall_handle = materials.add(Color::rgb(0.15, 0.15, 0.15).into());
+
+    let (map_w, map_h) = map.size;
+
+    for y in 0..map_h {
+        for x in 0..map_w {
+            match map.data.get(x + y * map_w) {
+                Some(&SimpleTile::Floor) => {
+                    // get the proper coordinates for translation
+                    let adj_pos = get_translate_from_position(5.0 + 10.0 * x as f32, 5.0 + 10.0 * y as f32);
+
+                    commands.spawn(SpriteComponents {
+                        material: floor_handle,
+                        // move sprite off screen
+                        translation: Translation(Vec3::new( adj_pos.0, adj_pos.1, 0.0)),
+                        sprite: Sprite {
+                            size: Vec2::new(10.0, 10.0),
+                        },
+                        ..Default::default()
+                    });
+                },
+                Some(&SimpleTile::Wall) => {
+                    // get the proper coordinates for translation
+                    let adj_pos = get_translate_from_position(5.0 + 10.0 * x as f32, 5.0 + 10.0 * y as f32);
+
+                    commands.spawn(SpriteComponents {
+                        material: wall_handle,
+                        // move sprite off screen
+                        translation: Translation(Vec3::new( adj_pos.0, adj_pos.1, 0.0)),
+                        sprite: Sprite {
+                            size: Vec2::new(10.0, 10.0),
+                        },
+                        ..Default::default()
+                    });
+                },
+                _ => {
+
+                },
+            }            
+        }
     }
 }
 
