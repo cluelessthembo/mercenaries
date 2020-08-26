@@ -94,6 +94,8 @@ fn main() {
     // add in the animations plugin
     .add_plugin(AnimationPlugin)
     .add_plugin(BehaviourPlugin)
+    // add in bevy_tiled's TiledMap plugin
+    .add_plugin(bevy_tiled::TiledMapPlugin)
     // run the app
     .run();
 }
@@ -108,15 +110,13 @@ pub struct FPSMeter;
 fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>, asset_server: Res<AssetServer>){
     let font_handle = asset_server.load("assets/fonts/LiberationMono-Regular.ttf").unwrap();
 
-    let texture_handle = asset_server.load("assets/tilesets/hyptosis.png").unwrap();
+    //let texture_handle = asset_server.load("assets/tilesets/hyptosis.png").unwrap();
     commands
         .spawn(bevy_tiled::TiledMapComponents {
-            map_asset: asset_server.load("assets/maps/test_map.tmx").unwrap(),
-            material: materials.add(texture_handle.into()),
+            map_asset: asset_server.load("assets/maps/ortho-map.tmx").unwrap(),
             center: true,
             ..Default::default()
-        })
-        .spawn(Camera2dComponents::default());
+        });
 
     commands
         // cameras
@@ -229,7 +229,7 @@ fn draw_sprite_system(mut query: Query<(&Sprite, &mut Translation, &Position)>){
         let adj_pos = get_translate_from_position(pos.0, pos.1);
 
         // assign coordinates
-        transl.0 = Vec3::new(adj_pos.0, adj_pos.1, 0.0);
+        transl.0 = Vec3::new(adj_pos.0, adj_pos.1, transl.0[2]);
     }
 }
 // person plugin
@@ -419,7 +419,7 @@ impl SimpleRect {
         SpriteComponents {
             material: color_handle,
             // move sprite off screen
-            translation: Translation(Vec3::new(-1000.0, -1000.0, 0.0)),
+            translation: Translation(Vec3::new(-1000.0, -1000.0, 1.0)),
             sprite: Sprite {
                 size: size,
             },
