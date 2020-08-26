@@ -15,6 +15,10 @@ use uuid::Uuid;
 use std::collections::{VecDeque, HashMap};
 // imports for random number generator
 use rand::Rng;
+// imports for noise generator
+use noise::{NoiseFn, Perlin, Seedable};
+// imports for reading file
+use std::fs;
 // id component
 // this should be spawned along side every entity
 // it is responsible for keeping the unique id of each entity
@@ -1360,12 +1364,13 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Id, &Positi
                     match duration {
                         // if duration was specified
                         Some(&length) => {
-                            // create a timer that waits for <length> number of seconds
+                            // create a non-repeating timer that waits for <length> number of seconds
                             actions.action_timer = Some(Timer::from_seconds(length, false));
                         },
                         // if duration was not specified
                         None => {
                             // default behaviour is to wait for one second
+                            // create a non-repeating timer to wait for one second
                             actions.action_timer = Some(Timer::from_seconds(1.0, false));
                         }
                     }
@@ -1580,11 +1585,13 @@ impl AnimationFrameRate {
     // default frame rate
     fn new() -> Self {
         // 6fps per second animation frame rate
+        // create a repeating timer for animation frame rate
         AnimationFrameRate(Timer::from_seconds(4.0 / 24.0, true))
     }
     // generates a new animation frame rate struct from a given fps
     // fps refers to the desired number of frames per second
     fn from_frame_rate(fps: f32) -> Self {
+        // create a repeating timer for animation frame rate
         AnimationFrameRate(Timer::from_seconds(1.0 / fps, true))
     }
 }
@@ -1876,5 +1883,87 @@ fn run_behaviour_system(mut query: Query<(&Position, &mut Behaviour, &mut Nerve)
 
             },
         }    
+    }
+}
+
+struct MapPlugin;
+
+impl Plugin for MapPlugin {
+    fn build (&self, app: &mut AppBuilder){
+
+    }
+}
+
+enum SimpleTile {
+    Floor,
+    Wall,
+}
+
+struct SimpleMap {
+    size: Vec2,
+    data: Vec<SimpleTile>,
+}
+
+impl Default for SimpleMap {
+    fn default() -> Self {
+        SimpleMap {
+            size: Vec2::new(0.0, 0.0),
+            data: Vec::new(),
+        }
+    }
+}
+
+impl SimpleMap {
+    fn load_from_file(filepath: String) -> Self {
+        let contents = fs::read_to_string(filepath).expect("Something went wrong when reading the file.");
+        
+        for line in contents.lines() {
+            
+        }
+        
+        SimpleMap::default()
+    }
+}
+
+enum TileType {
+    Grass,
+    Water,
+    Empty,
+}
+
+struct MapData {
+    generator: noise::Perlin,
+}
+
+impl Default for MapData {
+    fn default() -> Self {
+        MapData::new(0)
+    }
+}
+
+impl MapData {
+    fn new(seed: u32) -> Self {
+        let mut gen = Perlin::new();
+        gen.set_seed(seed);
+        MapData {
+            generator: gen,
+        }
+    }
+    fn convert_f64_to_tiletype(float: f64) -> TileType {
+        match float {
+            0.0..=0.5 => {
+                TileType::Water
+            },
+            0.5..=1.0 => {
+                TileType::Grass
+            },
+            _ => {
+                TileType::Empty
+            }
+        }
+    }
+    fn get_tile(&self, x: f32, y: f32) -> TileType{
+        let noise = self.generator.get([x as f64, y as f64]);
+        MapData::convert_f64_to_tiletype(noise)
     }
 }
