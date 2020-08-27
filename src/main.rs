@@ -24,6 +24,7 @@ use std::fs;
 static WINDOW_WIDTH: f32 = 800.0;
 static WINDOW_HEIGHT: f32 = 450.0;
 static PLAYER_Z_LEVEL: f32 = 10.0;
+static MAP_PATH: &str = "assets/maps/ortho-map.tmx";
 
 // imports for bevy_tiled
 use bevy_tiled;
@@ -121,7 +122,7 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>, a
     // add in tile map
     commands
         .spawn(bevy_tiled::TiledMapComponents {
-            map_asset: asset_server.load("assets/maps/ortho-map.tmx").unwrap(),
+            map_asset: asset_server.load(MAP_PATH).unwrap(),
             center: true,
             ..Default::default()
         });
