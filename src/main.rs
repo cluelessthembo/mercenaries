@@ -19,6 +19,9 @@ use rand::Rng;
 use noise::{NoiseFn, Perlin, Seedable};
 // imports for reading file
 use std::fs;
+// imports for rapier2d bevy plugins
+use bevy_rapier2d::physics::RapierPhysicsPlugin;
+use bevy_rapier2d::render::RapierRenderPlugin;
 
 // settings for window width/height
 static WINDOW_WIDTH: f32 = 800.0;
@@ -79,6 +82,9 @@ fn main() {
     .add_resource(ClearColor(Color::rgb(0.2, 0.2, 0.8)))
     // adds useful plugins for making a game
     .add_default_plugins()
+    // add in physics plugins
+    .add_plugin(RapierPhysicsPlugin)
+    .add_plugin(RapierRenderPlugin)
     // add in the fps diagnostics plugin
     .add_plugin(FrameTimeDiagnosticsPlugin::default())
     // perform initial setup
