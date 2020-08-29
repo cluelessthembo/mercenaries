@@ -47,26 +47,40 @@ pub struct Map {
 }
 
 impl Map {
-    pub fn center(&self) -> Translation {
+    pub fn project_ortho(pos: Vec2, tile_width: f32, tile_height: f32) -> Vec2 {
+        let x = tile_width * pos.x();
+        let y = tile_height * pos.y();
+        Vec2::new(x, -y)
+    }
+    pub fn unproject_ortho(pos: Vec2, tile_width: f32, tile_height: f32) -> Vec2 {
+        let x = pos.x() / tile_width;
+        let y = -(pos.y()) / tile_height;
+        Vec2::new(x, y)
+    }
+    pub fn project_iso(pos: Vec2, tile_width: f32, tile_height: f32) -> Vec2 {
+        let x = (pos.x() - pos.y()) * tile_width / 2.0;
+        let y = (pos.x() + pos.y()) * tile_height / 2.0;
+        Vec2::new(x, -y)
+    }
+    pub fn unproject_iso(pos: Vec2, tile_width: f32, tile_height: f32) -> Vec2 {
+        let half_width = tile_width / 2.0;
+        let half_height = tile_height / 2.0;
+        let x = ((pos.x() / half_width) + (-(pos.y()) / half_height)) / 2.0;
+        let y = ((-(pos.y()) / half_height) - (pos.x() / half_width)) / 2.0;
+        Vec2::new(x.round(), y.round())
+    }
+    pub fn center(&self, origin : &Translation) -> Translation {
         let tile_size = Vec2::new(self.map.tile_width as f32, self.map.tile_height as f32);
-        let width = self.map.width as f32;
-        let height = self.map.height as f32;
+        let map_center = Vec2::new(self.map.width as f32 / 2.0, self.map.height as f32 / 2.0);
         match self.map.orientation {
-            tiled::Orientation::Orthogonal => Translation::new(
-                -tile_size.x() * width * 2.0,
-                tile_size.y() * height * 2.0,
-                0.0,
-            ),
-            tiled::Orientation::Isometric => Translation::new(
-                ((tile_size.x() * (width * 2.0) / 2.0) + (height * tile_size.x() / 2.0)
-                    - (height / 4.0 * tile_size.x() / 2.0))
-                    * -2.0,
-                (((height - (height / 4.0) - 1.0) * tile_size.y() / 2.0)
-                    + (width * tile_size.y() / 2.0)
-                    - (width / 4.0 * tile_size.y() / 2.0))
-                    * -4.0,
-                0.0,
-            ),
+            tiled::Orientation::Orthogonal => {
+                let center = Map::project_ortho(map_center, tile_size.x(), tile_size.y());
+                Translation::new(origin.x() - center.x() * 4.0, origin.y() - center.y() * 4.0, origin.z())
+            }
+            tiled::Orientation::Isometric => {
+                let center = Map::project_iso(map_center, tile_size.x(), tile_size.y());
+                Translation::new(origin.x() - center.x() * 4.0, origin.y()  -center.y() * 4.0, origin.z())
+            }
 
             _ => panic!("Unsupported orientation {:?}", self.map.orientation),
         }
@@ -79,6 +93,7 @@ pub struct TiledMapComponents {
     pub map_asset: Handle<Map>,
     pub materials: HashMap<u32, Handle<ColorMaterial>>,
     pub center: bool,
+    pub origin : Translation
 }
 
 impl Default for TiledMapComponents {
@@ -87,6 +102,7 @@ impl Default for TiledMapComponents {
             map_asset: Handle::default(),
             materials: HashMap::default(),
             center: false,
+            origin : Translation::new(0., 0., 0.)
         }
     }
 }
@@ -160,6 +176,7 @@ pub fn process_loaded_tile_maps(
         &bool,
         &Handle<Map>,
         &mut HashMap<u32, Handle<ColorMaterial>>,
+        &Translation
     )>,
 ) {
     let mut changed_maps = HashSet::<Handle<Map>>::new();
@@ -183,7 +200,7 @@ pub fn process_loaded_tile_maps(
     for changed_map in changed_maps.iter() {
         let map = maps.get_mut(changed_map).unwrap();
 
-        for (_, _, _, mut materials_map) in &mut query.iter() {
+        for (_, _, _, mut materials_map, _) in &mut query.iter() {
             for tileset in &map.map.tilesets {
                 if !materials_map.contains_key(&tileset.first_gid) {
                     let texture_path =
@@ -208,14 +225,14 @@ pub fn process_loaded_tile_maps(
         }
     }
 
-    for (_, center, map_handle, materials_map) in &mut query.iter() {
+    for (_, center, map_handle, materials_map, origin) in &mut query.iter() {
         if new_meshes.contains_key(map_handle) {
             let map = maps.get(map_handle).unwrap();
 
             let translation = if *center {
-                map.center()
+                map.center(origin)
             } else {
-                Translation::default()
+                *origin
             };
 
             let mesh_list = new_meshes.get_mut(map_handle).unwrap();

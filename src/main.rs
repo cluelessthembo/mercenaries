@@ -2047,10 +2047,11 @@ impl MapData {
     fn new(seed: u32) -> Self {
         let gen = Perlin::new();
         gen.set_seed(seed);
+        let size = ((WINDOW_WIDTH / TILE_SIZE) as usize, (WINDOW_HEIGHT / TILE_SIZE) as usize);
         MapData {
             generator: gen,
-            size: ((WINDOW_WIDTH / TILE_SIZE) as usize, (WINDOW_HEIGHT / TILE_SIZE) as usize),
-            data: Vec::new(),
+            size: size,
+            data: vec![0.0; size.0 * size.1],
         }
     }
     fn convert_f64_to_tiletype(float: f64) -> TileType {
@@ -2071,8 +2072,8 @@ impl MapData {
         MapData::convert_f64_to_tiletype(noise)
     }
     fn update_map(&mut self, x: i32, y: i32) {
-        for j in 0..self.size.0 {
-            for i in 0..self.size.1 {
+        for j in 0..self.size.1 {
+            for i in 0..self.size.0 {
                 self.data[i + j * self.size.0] = get_map_weight_from_tile_type(self.get_tile(i as i32 + x, j as i32 + y));
             }
         }
