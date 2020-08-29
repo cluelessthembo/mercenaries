@@ -22,12 +22,15 @@ use std::fs;
 // imports for rapier2d bevy plugins
 use bevy_rapier2d::physics::RapierPhysicsPlugin;
 use bevy_rapier2d::render::RapierRenderPlugin;
-
+// imports for pathfinding
+use pathfinding::prelude::astar;
 // settings for window width/height
 static WINDOW_WIDTH: f32 = 800.0;
 static WINDOW_HEIGHT: f32 = 450.0;
+static TILE_SIZE: f32 = 10.0;
 static PLAYER_Z_LEVEL: f32 = 10.0;
 static MAP_PATH: &str = "assets/maps/ortho-map.tmx";
+static MAX_PATHFINDERS: usize = 10;
 
 // imports for bevy_tiled
 use bevy_tiled;
@@ -1915,114 +1918,98 @@ fn run_behaviour_system(mut query: Query<(&Position, &mut Behaviour, &mut Nerve)
     }
 }
 
+struct MapCoords(f32, f32);
+
+struct PathfindersQueue(usize);
+
+#[derive(Default)]
+struct TilePos(usize, usize);
+ 
+impl TilePos {
+    fn from_coords(x: f32, y: f32) -> Self {
+        if x < 0.0 || y < 0.0 {
+            panic!("bad coordinates: negative, non-existent tile");
+        }
+        TilePos((x / TILE_SIZE) as usize, (y / TILE_SIZE) as usize)
+    }
+    fn to_coords(&self) -> (f32, f32) {
+        (TILE_SIZE / 2.0 + self.0 as f32 * TILE_SIZE, TILE_SIZE / 2.0 + self.1 as f32 * TILE_SIZE)
+    }
+    fn successors(&self) -> Vec<TilePos> {
+        let &TilePos(x, y) = self;
+        vec![TilePos(x - 1, y - 1), TilePos(x, y - 1), TilePos(x + 1, y - 1),
+        TilePos(x - 1, y), TilePos(x + 1, y), 
+        TilePos(x - 1, y + 1), TilePos(x, y + 1), TilePos(x + 1, y + 1)]
+    }
+}
+
+
+struct Pathfinder {
+    needs_pathfinding: bool,
+    path_start: TilePos,
+    path_goal: TilePos,
+    path: Vec<(f32, f32)>,
+}
+
+impl Default for Pathfinder {
+    fn default() -> Self {
+        Pathfinder {
+            needs_pathfinding: false,
+            path_start: TilePos::default(),
+            path_goal: TilePos::default(),
+            path: Vec::new(),
+        }
+    }
+}
+
 struct MapPlugin;
 
 impl Plugin for MapPlugin {
     fn build (&self, app: &mut AppBuilder){
-        //app.add_startup_system(simple_map_setup.system());
+        app.add_resource(MapCoords(0.0, 0.0))
+            .add_resource(MapData::default())
+            .add_resource(PathfindersQueue(0))
+            .add_system(update_map_system.system())
+            .add_system(pathfind_system.system());
     }
 }
 
-enum SimpleTile {
-    Floor,
-    Wall,
+
+fn update_map_system(coords: Res<MapCoords>, mut map: ResMut<MapData>) {
+    map.update_map(coords.0 as i32, coords.1 as i32);
 }
 
-struct SimpleMap {
-    size: (usize, usize),
-    data: Vec<SimpleTile>,
-}
-
-impl Default for SimpleMap {
-    fn default() -> Self {
-        SimpleMap {
-            size: (0, 0),
-            data: Vec::new(),
+fn pathfind_system(mut waiting: ResMut<PathfindersQueue>, mut query: Query<(&mut Pathfinder, &Position)>) {
+    for (mut pf, pos) in &mut query.iter() {
+        if !pf.needs_pathfinding {
+            continue;
         }
-    }
-}
-
-impl SimpleMap {
-    fn load_from_file(filepath: String) -> Self {
-        let contents = fs::read_to_string(filepath).expect("Something went wrong when reading the file.");
-        
-        let mut data = Vec::new();
-        let height = contents.lines().count();
-        let mut width = 0;
-
-        for line in contents.lines() {
-            width = line.chars().count();
-            for c in line.chars() {
-                match c {
-                    '0' => {
-                        data.push(SimpleTile::Floor);
-                    },
-                    '1' => {
-                        data.push(SimpleTile::Wall);
-                    },
-                    _ => {
-
-                    },
+        if waiting.0 < MAX_PATHFINDERS {
+            waiting.0 += 1;
+            // update start coordinates
+            pf.path_start = TilePos::from_coords(pos.0, pos.1);
+            
+            // pathfind here
+            //let path = astar(&pf.path_start, |p| p.successors(), |p| *p == pf.path_goal);
+            let path = None;
+            match path {
+                Some(path) => {
+                    pf.path = path;
+                },
+                None => {
+                    panic!("path not found");
                 }
             }
-        }
-        
-        SimpleMap {
-            size: (width, height),
-            data: data,
-        }
-    }
-}
 
-fn simple_map_setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
-    let map = SimpleMap::load_from_file("assets/maps/simple_map.txt".to_string());
-
-    let floor_handle = materials.add(Color::rgb(0.7, 0.7, 0.7).into());
-    let wall_handle = materials.add(Color::rgb(0.15, 0.15, 0.15).into());
-
-    let (map_w, map_h) = map.size;
-
-    for y in 0..map_h {
-        for x in 0..map_w {
-            match map.data.get(x + y * map_w) {
-                Some(&SimpleTile::Floor) => {
-                    /*
-                    // get the proper coordinates for translation
-                    let adj_pos = get_translate_from_position(5.0 + 10.0 * x as f32, 5.0 + 10.0 * y as f32);
-
-                    commands.spawn(SpriteComponents {
-                        material: floor_handle,
-                        // move sprite off screen
-                        translation: Translation(Vec3::new( adj_pos.0, adj_pos.1, 0.0)),
-                        sprite: Sprite {
-                            size: Vec2::new(10.0, 10.0),
-                        },
-                        ..Default::default()
-                    });
-                    */
-                },
-                Some(&SimpleTile::Wall) => {
-                    /*
-                    // get the proper coordinates for translation
-                    let adj_pos = get_translate_from_position(5.0 + 10.0 * x as f32, 5.0 + 10.0 * y as f32);
-
-                    commands.spawn(SpriteComponents {
-                        material: wall_handle,
-                        // move sprite off screen
-                        translation: Translation(Vec3::new( adj_pos.0, adj_pos.1, 0.0)),
-                        sprite: Sprite {
-                            size: Vec2::new(10.0, 10.0),
-                        },
-                        ..Default::default()
-                    });
-                    */
-                },
-                _ => {
-
-                },
-            }            
+            pf.needs_pathfinding = false;
+        }else{
+            // max pathfinders this frame reached
+            // break loop
+            break;
         }
     }
+    // reset pathfinders queue
+    waiting.0 = 0;
 }
 
 enum TileType {
@@ -2031,8 +2018,22 @@ enum TileType {
     Empty,
 }
 
+#[derive(Clone)]
 struct MapData {
     generator: noise::Perlin,
+    size: (usize, usize),
+    data: Vec::<f32>,
+}
+
+fn get_map_weight_from_tile_type(tile: TileType) -> f32 {
+    match tile {
+        TileType::Grass => {
+            1.0
+        },
+        _ => {
+            f32::INFINITY
+        },
+    }
 }
 
 impl Default for MapData {
@@ -2041,12 +2042,15 @@ impl Default for MapData {
     }
 }
 
+
 impl MapData {
     fn new(seed: u32) -> Self {
-        let mut gen = Perlin::new();
+        let gen = Perlin::new();
         gen.set_seed(seed);
         MapData {
             generator: gen,
+            size: ((WINDOW_WIDTH / TILE_SIZE) as usize, (WINDOW_HEIGHT / TILE_SIZE) as usize),
+            data: Vec::new(),
         }
     }
     fn convert_f64_to_tiletype(float: f64) -> TileType {
@@ -2062,8 +2066,15 @@ impl MapData {
             }
         }
     }
-    fn get_tile(&self, x: f32, y: f32) -> TileType{
+    fn get_tile(&self, x: i32, y: i32) -> TileType{
         let noise = self.generator.get([x as f64, y as f64]);
         MapData::convert_f64_to_tiletype(noise)
+    }
+    fn update_map(&mut self, x: i32, y: i32) {
+        for j in 0..self.size.0 {
+            for i in 0..self.size.1 {
+                self.data[i + j * self.size.0] = get_map_weight_from_tile_type(self.get_tile(i as i32 + x, j as i32 + y));
+            }
+        }
     }
 }

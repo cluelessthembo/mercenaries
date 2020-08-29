@@ -1632,6 +1632,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f56a2d0bc861f9165be4eb3442afd3c236d8a98afd426f65d92324ae1091a484"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1821,6 +1830,7 @@ dependencies = [
  "bevy_tiled",
  "ezing",
  "noise",
+ "pathfinding",
  "rand 0.7.3",
  "uuid",
 ]
@@ -2257,6 +2267,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d95a7db200b97ef370c8e6de0088252f7e0dfff7d047a28528e47456c0fc98b6"
 dependencies = [
  "proc-macro-hack",
+]
+
+[[package]]
+name = "pathfinding"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86f4d8cc85ca67860ef4324faf86973a39e4e1c78338987eda29a8e6b6ec0c0e"
+dependencies = [
+ "fixedbitset 0.2.0",
+ "indexmap",
+ "itertools",
+ "num-traits 0.2.12",
 ]
 
 [[package]]
