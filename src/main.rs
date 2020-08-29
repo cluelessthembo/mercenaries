@@ -34,7 +34,8 @@ static MAX_PATHFINDERS: usize = 10;
 
 // imports for bevy_tiled
 use bevy_tiled;
-
+// imports for ordered_float
+use ordered_float::OrderedFloat;
 // id component
 // this should be spawned along side every entity
 // it is responsible for keeping the unique id of each entity
@@ -1922,7 +1923,7 @@ struct MapCoords(f32, f32);
 
 struct PathfindersQueue(usize);
 
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq, Clone, Copy, Hash)]
 struct TilePos(usize, usize);
  
 impl TilePos {
@@ -1935,12 +1936,6 @@ impl TilePos {
     fn to_coords(&self) -> (f32, f32) {
         (TILE_SIZE / 2.0 + self.0 as f32 * TILE_SIZE, TILE_SIZE / 2.0 + self.1 as f32 * TILE_SIZE)
     }
-    fn successors(&self) -> Vec<TilePos> {
-        let &TilePos(x, y) = self;
-        vec![TilePos(x - 1, y - 1), TilePos(x, y - 1), TilePos(x + 1, y - 1),
-        TilePos(x - 1, y), TilePos(x + 1, y), 
-        TilePos(x - 1, y + 1), TilePos(x, y + 1), TilePos(x + 1, y + 1)]
-    }
 }
 
 
@@ -1948,6 +1943,7 @@ struct Pathfinder {
     needs_pathfinding: bool,
     path_start: TilePos,
     path_goal: TilePos,
+    tile_path: Vec<TilePos>,
     path: Vec<(f32, f32)>,
 }
 
@@ -1958,6 +1954,7 @@ impl Default for Pathfinder {
             path_start: TilePos::default(),
             path_goal: TilePos::default(),
             path: Vec::new(),
+            tile_path: Vec::new(),
         }
     }
 }
@@ -1979,7 +1976,7 @@ fn update_map_system(coords: Res<MapCoords>, mut map: ResMut<MapData>) {
     map.update_map(coords.0 as i32, coords.1 as i32);
 }
 
-fn pathfind_system(mut waiting: ResMut<PathfindersQueue>, mut query: Query<(&mut Pathfinder, &Position)>) {
+fn pathfind_system(mut waiting: ResMut<PathfindersQueue>, map: Res<MapData>, mut query: Query<(&mut Pathfinder, &Position)>) {
     for (mut pf, pos) in &mut query.iter() {
         if !pf.needs_pathfinding {
             continue;
@@ -1990,11 +1987,13 @@ fn pathfind_system(mut waiting: ResMut<PathfindersQueue>, mut query: Query<(&mut
             pf.path_start = TilePos::from_coords(pos.0, pos.1);
             
             // pathfind here
-            //let path = astar(&pf.path_start, |p| p.successors(), |p| *p == pf.path_goal);
-            let path = None;
+            let path = astar(&pf.path_start, |p| map.successors(p), |p| map.get_diag_dist(*p, pf.path_goal), |p| *p == pf.path_goal);
+            //let path = None;
             match path {
-                Some(path) => {
-                    pf.path = path;
+                Some((path, cost)) => {
+                    pf.tile_path = path.clone();
+                    pf.path = path.iter().map( |t| t.to_coords()).collect();
+                    //pf.path = path;
                 },
                 None => {
                     panic!("path not found");
@@ -2066,6 +2065,34 @@ impl MapData {
                 TileType::Empty
             }
         }
+    }
+    fn successors(&self, tile: &TilePos) -> Vec<(TilePos, OrderedFloat<f32>)> {
+        let &TilePos(x, y) = tile;
+        let mut output = Vec::new();
+
+        for i in -1..2 {
+            for j in -1..2 {
+                if i == 0 && j == 0 {
+                    continue
+                }
+                let mx = x as i32 + i;
+                let my = y as i32 + j;
+                output.push((TilePos(mx as usize, my as usize), self.get_weight(tile)))
+            }
+        }
+        
+        output
+    }
+    fn get_weight(&self, tile: &TilePos) -> OrderedFloat<f32> {
+        let &TilePos(x, y) = tile;
+        OrderedFloat(self.data[x + y * self.size.0])
+    }
+    fn get_diag_dist(&self, a: TilePos, b: TilePos) -> OrderedFloat<f32> {
+        let TilePos(ax, ay) = a;
+        let TilePos(bx, by) = b;
+        let hdist = (ax as f32 - bx as f32).abs();
+        let vdist = (ay as f32 - by as f32).abs();
+        OrderedFloat(hdist.max(vdist))
     }
     fn get_tile(&self, x: i32, y: i32) -> TileType{
         let noise = self.generator.get([x as f64, y as f64]);

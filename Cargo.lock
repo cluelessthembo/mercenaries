@@ -1830,6 +1830,7 @@ dependencies = [
  "bevy_tiled",
  "ezing",
  "noise",
+ "ordered-float",
  "pathfinding",
  "rand 0.7.3",
  "uuid",
@@ -2190,6 +2191,15 @@ name = "once_cell"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "260e51e7efe62b592207e9e13a68e43692a7a279171d6ba57abd208bf23645ad"
+
+[[package]]
+name = "ordered-float"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fe9037165d7023b1228bc4ae9a2fa1a2b0095eca6c2998c624723dfd01314a5"
+dependencies = [
+ "num-traits 0.2.12",
+]
 
 [[package]]
 name = "owned_ttf_parser"

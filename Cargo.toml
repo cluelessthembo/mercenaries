@@ -15,6 +15,7 @@ noise = "0.6.0"
 bevy_tiled = { path = "crates/bevy_tiled", version = "0.1.0" }
 bevy_rapier2d = "0.1.1"
 pathfinding = "2.0.4"
+ordered-float = "2.0.0"
 
 [profile.dev.package.bevy]
 opt-level = 1
