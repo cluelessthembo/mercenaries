@@ -346,6 +346,16 @@ impl Nerve {
             action_timer: None,
         }
     }
+    fn is_curr_action_empty(&self) -> bool {
+        match self.current_action.action_type {
+            ActionType::Empty => {
+                true
+            },
+            _ => {
+                false
+            },
+        }
+    }
 }
 
 // enum for the type of action 
@@ -485,6 +495,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Controlled::new(0))
         .with(Nerve::new())
         .with(Size(10.0, 10.0))
+        .with(Pathfinder::default())
 
         .with(get_player_sprite_template(&mut materials))
         // same deal for the other three persons
@@ -496,13 +507,14 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         )
         .with(Id::new())
         .with(Person::new(AttitudeType::Squad))
-        .with(Position(800.0, 500.0))
+        .with(Position(200.0, 400.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(1))
         .with(Nerve::new())
         .with(Size(10.0, 10.0))
         .with(Behaviour::default())
         .with(get_squadmate_sprite_template(&mut materials))
+        .with(Pathfinder::default())
 
         .spawn(
             //Label::new("P3".to_string(), font_handle.clone(), Color::WHITE, 12.0),
@@ -517,6 +529,7 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         .with(Size(10.0, 10.0))
         .with(Behaviour::default())
         .with(get_squadmate_sprite_template(&mut materials))
+        .with(Pathfinder::default())
 
         .spawn(
             //Label::new("P4".to_string(), font_handle.clone(), Color::WHITE, 12.0),
@@ -524,14 +537,14 @@ fn add_people(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial
         )
         .with(Id::new())
         .with(Person::new(AttitudeType::Squad))
-        .with(Position(1000.0, 300.0))
+        .with(Position(500.0, 100.0))
         .with(Velocity(0.0, 0.0))
         .with(Controlled::new(3))
         .with(Nerve::new())
         .with(Size(10.0, 10.0))
         .with(Behaviour::default())
         .with(get_squadmate_sprite_template(&mut materials))
-        ;
+        .with(Pathfinder::default());
 }
 // encounter plugin
 // responsible for generating encounters for the player
@@ -571,6 +584,7 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         .with(Size(10.0, 10.0))
         .with(Behaviour::default())
         .with(get_hostile_sprite_template(&mut materials))
+        .with(Pathfinder::default())
         // repeat for another hostile entity
         .spawn(
             SimpleRect::new(black_handle, Vec2::new(10.0, 10.0)),
@@ -583,6 +597,7 @@ fn add_hostiles(mut commands: Commands, mut materials: ResMut<Assets<ColorMateri
         .with(Size(10.0, 10.0))
         .with(Behaviour::default())
         .with(get_hostile_sprite_template(&mut materials))
+        .with(Pathfinder::default())
         ;
 }
 // control plugin
@@ -1211,18 +1226,16 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Id, &Positi
                     }
                 }
 
-                if !use_move_vector {
-                    // position does not need to be adjusted for now
-                    // continue to next frame without using calculations
-                    continue;
-                }
+                if use_move_vector {
+                    // only calculate velocity if velocity needs to be adjusted
 
-                // retrieve new straightline velocity to position
-                let new_vel = get_straightline_velocity(move_to, (pos.0, pos.1));
+                    // retrieve new straightline velocity to position
+                    let new_vel = get_straightline_velocity(move_to, (pos.0, pos.1));
                 
-                // set the velocity vector to use the new velocity vector
-                vel.0 = new_vel[0];
-                vel.1 = new_vel[1];
+                    // set the velocity vector to use the new velocity vector
+                    vel.0 = new_vel[0];
+                    vel.1 = new_vel[1];
+                }
 
                 // check if this move can be skipped
                 let mut can_skip = true;
@@ -1248,6 +1261,8 @@ fn run_action_system(time: Res<Time>, mut query: Query<(&mut Nerve, &Id, &Positi
                         // set the current action to be the empty action
                         actions.current_action = Action::default();
                     }
+                }else{
+                    
                 }
             },
             // attack actions will attack a targeted entity
@@ -1805,12 +1820,12 @@ impl Plugin for BehaviourPlugin {
 // simple idle system
 // allows AI actors to wander around aimlessly
 // will probably be replaced, reworked or at least renamed
-fn simple_idle_system(mut query: Query<(&Behaviour, &mut Nerve, &Position)>) {
+fn simple_idle_system(mut query: Query<(&Behaviour, &Nerve, &mut Pathfinder, &Position)>) {
     // initialise random number generator
     let mut rng = rand::thread_rng();
 
     // iterate through every entity with a brain, nervous system, and a physical position
-    for (_control, mut actions, pos) in &mut query.iter() {
+    for (_control, actions, mut pf, pos) in &mut query.iter() {
         // check both current action as well as action queue
         match (actions.current_action.action_type, actions.action_queue.front()) {
             // if there is no current action and the action queue is empty
@@ -1825,8 +1840,11 @@ fn simple_idle_system(mut query: Query<(&Behaviour, &mut Nerve, &Position)>) {
                 let loiter_x = (rand_x + pos.0).max(10.0).min(WINDOW_WIDTH - 10.0);
                 let loiter_y = (rand_y + pos.1).max(10.0).min(WINDOW_HEIGHT - 10.0);
 
+                pf.needs_pathfinding = true;
+                pf.path_goal = TilePos::from_coords(loiter_x, loiter_y);
+                pf.real_goal = (loiter_x, loiter_y);
 
-                let mut params = HashMap::new();
+                /*let mut params = HashMap::new();
                 // range refers to the maximum range at which an attack can be launched
                 params.insert("range".to_string(), 0.0);
                 // add a move action to the randomly generated coordinate
@@ -1846,7 +1864,7 @@ fn simple_idle_system(mut query: Query<(&Behaviour, &mut Nerve, &Position)>) {
                     action_type: ActionType::Wait,
                     target: (None, None),
                     params: Some(params),
-                })
+                })*/
             }
             _ => {
 
@@ -1943,8 +1961,10 @@ struct Pathfinder {
     needs_pathfinding: bool,
     path_start: TilePos,
     path_goal: TilePos,
+    real_goal: (f32, f32),
     tile_path: Vec<TilePos>,
     path: Vec<(f32, f32)>,
+    path_index: usize,
 }
 
 impl Default for Pathfinder {
@@ -1953,8 +1973,10 @@ impl Default for Pathfinder {
             needs_pathfinding: false,
             path_start: TilePos::default(),
             path_goal: TilePos::default(),
+            real_goal: (0.0, 0.0),
             path: Vec::new(),
             tile_path: Vec::new(),
+            path_index: 0,
         }
     }
 }
@@ -1967,13 +1989,49 @@ impl Plugin for MapPlugin {
             .add_resource(MapData::default())
             .add_resource(PathfindersQueue(0))
             .add_system(update_map_system.system())
-            .add_system(pathfind_system.system());
+            .add_system(pathfind_system.system())
+            .add_system(follow_path_system.system());
     }
 }
 
 
-fn update_map_system(coords: Res<MapCoords>, mut map: ResMut<MapData>) {
+fn update_map_system(coords: Res<MapCoords>, mut map: ResMut<MapData>, mut query: Query<(&Person, &Position)>) {
     map.update_map(coords.0 as i32, coords.1 as i32);
+    for (_person, pos) in &mut query.iter() {
+        map.set_tile_occupied(&TilePos::from_coords(pos.0, pos.1));
+    }
+}
+
+fn follow_path_system(mut query: Query<(&mut Pathfinder, &mut Nerve, &Position)>) {
+    for (mut pf, mut actions, pos) in &mut query.iter() {
+        if pf.tile_path.len() == 0 {
+            continue;
+        }
+
+        if pf.path_index < pf.tile_path.len() {
+
+            let path_tile = pf.tile_path[pf.path_index];
+            
+            if TilePos::from_coords(pos.0, pos.1) == path_tile {
+                pf.path_index += 1;
+            }
+
+        }
+
+        if pf.path_index < pf.tile_path.len() && actions.is_curr_action_empty() && actions.action_queue.is_empty() {
+            for i in pf.path_index..pf.tile_path.len() {
+                let mut params = HashMap::new();
+
+                params.insert("range".to_string(), TILE_SIZE);
+
+                actions.action_queue.push_back(Action {
+                    action_type: ActionType::Move,
+                    target: (Some(pf.path[i]), None),
+                    params: Some(params),
+                });
+            }
+        }
+    }
 }
 
 fn pathfind_system(mut waiting: ResMut<PathfindersQueue>, map: Res<MapData>, mut query: Query<(&mut Pathfinder, &Position)>) {
@@ -1983,17 +2041,27 @@ fn pathfind_system(mut waiting: ResMut<PathfindersQueue>, map: Res<MapData>, mut
         }
         if waiting.0 < MAX_PATHFINDERS {
             waiting.0 += 1;
+            // update path index
+            pf.path_index = 0;
             // update start coordinates
             pf.path_start = TilePos::from_coords(pos.0, pos.1);
             
+            if map.is_tile_occupied(&pf.path_goal) {
+                //panic!("tile destination is occupied");
+            }
+
             // pathfind here
             let path = astar(&pf.path_start, |p| map.successors(p), |p| map.get_diag_dist(*p, pf.path_goal), |p| *p == pf.path_goal);
             //let path = None;
             match path {
                 Some((path, cost)) => {
+                    let real_goal = pf.real_goal;
+
                     pf.tile_path = path.clone();
                     pf.path = path.iter().map( |t| t.to_coords()).collect();
-                    //pf.path = path;
+
+                    pf.tile_path.push(TilePos::from_coords(real_goal.0, real_goal.1));
+                    pf.path.push((real_goal.0, real_goal.1));
                 },
                 None => {
                     panic!("path not found");
@@ -2022,6 +2090,7 @@ struct MapData {
     generator: noise::Perlin,
     size: (usize, usize),
     data: Vec::<f32>,
+    occupied: Vec::<bool>,
 }
 
 fn get_map_weight_from_tile_type(tile: TileType) -> f32 {
@@ -2030,7 +2099,8 @@ fn get_map_weight_from_tile_type(tile: TileType) -> f32 {
             1.0
         },
         _ => {
-            f32::INFINITY
+            1.0
+            //f32::INFINITY
         },
     }
 }
@@ -2051,6 +2121,7 @@ impl MapData {
             generator: gen,
             size: size,
             data: vec![0.0; size.0 * size.1],
+            occupied: vec![false; size.0 * size.1],
         }
     }
     fn convert_f64_to_tiletype(float: f64) -> TileType {
@@ -2077,11 +2148,21 @@ impl MapData {
                 }
                 let mx = x as i32 + i;
                 let my = y as i32 + j;
-                output.push((TilePos(mx as usize, my as usize), self.get_weight(tile)))
+                if (mx as usize) < self.size.0 && (my as usize) < self.size.1 && mx >= 0 && my >= 0 {
+                    output.push((TilePos(mx as usize, my as usize), self.get_weight(tile)))
+                }
             }
         }
         
         output
+    }
+    fn is_tile_occupied(&self, tile: &TilePos) -> bool {
+        let &TilePos(x, y) = tile;
+        self.occupied[x + y * self.size.0]
+    }
+    fn set_tile_occupied(&mut self, tile: &TilePos) {
+        let &TilePos(x, y) = tile;
+        self.occupied[x + y * self.size.0] = true;
     }
     fn get_weight(&self, tile: &TilePos) -> OrderedFloat<f32> {
         let &TilePos(x, y) = tile;
@@ -2090,9 +2171,10 @@ impl MapData {
     fn get_diag_dist(&self, a: TilePos, b: TilePos) -> OrderedFloat<f32> {
         let TilePos(ax, ay) = a;
         let TilePos(bx, by) = b;
-        let hdist = (ax as f32 - bx as f32).abs();
-        let vdist = (ay as f32 - by as f32).abs();
-        OrderedFloat(hdist.max(vdist))
+        let dx = (ax as f32 - bx as f32).abs();
+        let dy = (ay as f32 - by as f32).abs();
+        let c = self.get_weight(&a).0;
+        OrderedFloat(c * (dx + dy) + (c * 1.414 - 2.0 * c) * dx.min(dy))
     }
     fn get_tile(&self, x: i32, y: i32) -> TileType{
         let noise = self.generator.get([x as f64, y as f64]);
