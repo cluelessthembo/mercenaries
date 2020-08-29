@@ -1959,6 +1959,7 @@ impl TilePos {
 
 struct Pathfinder {
     needs_pathfinding: bool,
+    path_ready: bool,
     path_start: TilePos,
     path_goal: TilePos,
     real_goal: (f32, f32),
@@ -1971,6 +1972,7 @@ impl Default for Pathfinder {
     fn default() -> Self {
         Pathfinder {
             needs_pathfinding: false,
+            path_ready: false,
             path_start: TilePos::default(),
             path_goal: TilePos::default(),
             real_goal: (0.0, 0.0),
@@ -2030,6 +2032,7 @@ fn follow_path_system(mut query: Query<(&mut Pathfinder, &mut Nerve, &Position)>
                     params: Some(params),
                 });
             }
+            pf.path_ready = true;
         }
     }
 }
